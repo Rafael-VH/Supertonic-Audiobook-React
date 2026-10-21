@@ -1,0 +1,9 @@
+node_modules
+dist
+dist-ssr
+*.local
+.DS_Store
+.vite
+
+# WASM de onnxruntime-web: se copia en build, no se versiona.
+public/ort/
