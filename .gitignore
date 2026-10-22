@@ -7,3 +7,7 @@ dist-ssr
 
 # WASM de onnxruntime-web: se copia en build, no se versiona.
 public/ort/
+
+# Modelos pesados (descargados en runtime / build local)
+/assets/
+public/assets/

@@ -4,6 +4,9 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Supertonic-AudioBook - Conversor de archivos a audio</title>
+    <!-- Inyecta COOP/COEP en hosts que no permiten cabeceras (GitHub Pages).
+         Necesario para SharedArrayBuffer -> varios hilos de WASM. Recarga una vez. -->
+    <script src="coi-serviceworker.js"></script>
   </head>
   <body>
     <div id="root"></div>

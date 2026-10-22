@@ -1,3 +1,11 @@
+/**
+ * Adaptador del motor TTS: envuelve `helper.js` del vendor (MIT) y expone una
+ * API pequeña en español para el dominio.
+ *
+ * Los pesos se descargan de Hugging Face con caché en Cache Storage
+ * (ver `cache-modelos.ts`).
+ */
+
 import * as ort from 'onnxruntime-web'
 import {
   loadTextToSpeech,
@@ -7,20 +15,44 @@ import {
   type Style,
   type TextToSpeech,
 } from '../lib/supertonic/helper.js'
+import { BASE_ONNX, conCacheDeModelos, urlVoz, type ProgresoModelo } from './cache-modelos'
 
 export { AVAILABLE_LANGS }
 export type { Style, TextToSpeech }
 
-const HF_BASE = 'https://huggingface.co/Supertone/supertonic-3/resolve/main'
+export type Backend = 'webgpu' | 'wasm'
+
+/** Defaults decididos en docs/plan-port-react.md §2.3 (paridad con el desktop). */
+export const PASOS_DEFECTO = 5
+export const VELOCIDAD_DEFECTO = 1.1
+export const SILENCIO_DEFECTO = 0.6
 
 let motorTts: TextToSpeech | null = null
 let estiloVoz: Style | null = null
+let backendActivo: Backend | null = null
 
+/**
+ * Configura ONNX Runtime Web.
+ *
+ * `wasmPaths` tiene que ser absoluto: con './ort/' ORT lo resuelve contra la
+ * URL del módulo (`/node_modules/.vite/deps/ort/…`) y falla con
+ * "no available backend found".
+ */
 export function configurarOrt(): void {
-  ort.env.wasm.wasmPaths = './ort/'
-  // GitHub Pages sin COOP/COEP: usar WASM single-thread
-  ort.env.wasm.numThreads = 1
-  // Algunos builds web de ort usan wasmProxy; mantener comportamiento por defecto
+  ort.env.wasm.wasmPaths = new URL('ort/', document.baseURI).href
+
+  const aislado =
+    (globalThis as unknown as { crossOriginIsolated?: boolean }).crossOriginIsolated === true
+  const nucleos = navigator.hardwareConcurrency || 1
+  ort.env.wasm.numThreads = aislado ? Math.min(nucleos, 4) : 1
+
+  // OJO: `proxy = true` NO sirve con este `helper.js`. ORT transfiere los
+  // ArrayBuffer al worker (los detacha) y el motor reutiliza los tensores del
+  // estilo en cada paso -> "An ArrayBuffer is detached and could not be cloned".
+  // Mientras la inferencia corra en el hilo principal, el aviso de "no
+  // responde" es el precio. La solución de verdad es mover el motor entero a
+  // un Web Worker propio (Fase 3 del plan).
+  ort.env.wasm.proxy = false
 }
 
 export async function detectarWebGPU(): Promise<boolean> {
@@ -34,35 +66,44 @@ export async function detectarWebGPU(): Promise<boolean> {
   }
 }
 
-export async function inicializarMotor(opts: {
-  onnxDir?: string
-  usarWebGPU?: boolean
-  alProgreso?: (nombre: string, indice: number, total: number) => void
-} = {}): Promise<{ motor: TextToSpeech; cfgs: Record<string, unknown> }> {
+export async function inicializarMotor(
+  opts: {
+    usarWebGPU?: boolean
+    alProgreso?: (p: ProgresoModelo) => void
+    alModelo?: (nombre: string, indice: number, total: number) => void
+  } = {},
+): Promise<{ motor: TextToSpeech; backend: Backend }> {
+  const usarGpu = opts.usarWebGPU ?? (await detectarWebGPU())
+  backendActivo = usarGpu ? 'webgpu' : 'wasm'
   configurarOrt()
-  const onnxDir = opts.onnxDir ?? './assets/onnx'
-  const wantGpu = opts.usarWebGPU ?? (await detectarWebGPU())
 
-  const sessionOptions: ort.InferenceSession.SessionOptions = wantGpu
-    ? { executionProviders: ['webgpu'], graphOptimizationLevel: 'all' }
-    : { executionProviders: ['wasm'], graphOptimizationLevel: 'all' }
+  const sessionOptions: ort.InferenceSession.SessionOptions = {
+    executionProviders: usarGpu ? ['webgpu'] : ['wasm'],
+    graphOptimizationLevel: 'all',
+  }
 
-  const res = await loadTextToSpeech(onnxDir, sessionOptions, (nombre, indice, total) => {
-    opts.alProgreso?.(nombre, indice, total)
-  })
+  const { textToSpeech } = await conCacheDeModelos(
+    () => loadTextToSpeech(BASE_ONNX, sessionOptions, opts.alModelo ?? null),
+    opts.alProgreso,
+  )
 
-  motorTts = res.textToSpeech
-  return { motor: res.textToSpeech, cfgs: res.cfgs }
+  motorTts = textToSpeech
+  return { motor: textToSpeech, backend: backendActivo }
 }
 
-export async function cargarVoces(opts: {
-  voicePaths?: string[]
-  verbose?: boolean
-} = {}): Promise<Style> {
-  const voicePaths = opts.voicePaths ?? Array.from({ length: 10 }, (_, i) => `./assets/voice_styles/M${i + 1}.json`)
-  const style = await loadVoiceStyle(voicePaths, opts.verbose ?? false)
-  estiloVoz = style
-  return style
+/**
+ * Carga UN estilo de voz.
+ *
+ * `TextToSpeech.call()` rechaza lotes (`style.ttl.dims[0] !== 1`), así que no
+ * se pueden cargar las 10 voces juntas como hacía la versión anterior.
+ */
+export async function cargarVoz(
+  opts: { voz?: string; alProgreso?: (p: ProgresoModelo) => void } = {},
+): Promise<Style> {
+  const voz = opts.voz ?? 'M1'
+  const estilo = await conCacheDeModelos(() => loadVoiceStyle([urlVoz(voz)], false), opts.alProgreso)
+  estiloVoz = estilo
+  return estilo
 }
 
 export function obtenerMotor(): TextToSpeech {
@@ -71,21 +112,60 @@ export function obtenerMotor(): TextToSpeech {
 }
 
 export function obtenerEstilo(): Style {
-  if (!estiloVoz) throw new Error('Estilos de voz no cargados. Llama a cargarVoces() primero.')
+  if (!estiloVoz) throw new Error('Estilo de voz no cargado. Llama a cargarVoz() primero.')
   return estiloVoz
 }
 
-export function generarWavBlob(wav: Float32Array | number[], sampleRate: number): Blob {
-  const arr = Array.isArray(wav) ? new Float32Array(wav) : wav
-  const buf = writeWavFile(arr, sampleRate)
-  // writeWavFile devuelve ArrayBuffer
-  return new Blob([buf as BlobPart], { type: 'audio/wav' })
+export function backend(): Backend | null {
+  return backendActivo
 }
 
-export function urlModeloHf(archivo: string): string {
-  return `${HF_BASE}/onnx/${archivo}`
+export type OpcionesSintesis = {
+  texto: string
+  lang?: string
+  pasos?: number
+  velocidad?: number
+  silencio?: number
+  alPaso?: (hecho: number, total: number) => void
 }
 
-export function urlVozHf(archivo: string): string {
-  return `${HF_BASE}/voice_styles/${archivo}`
+export type ResultadoSintesis = {
+  muestras: number[]
+  sampleRate: number
+  /** Duración del audio generado, en segundos. */
+  segundos: number
+  /** Tiempo de cómputo, en milisegundos. */
+  ms: number
+  /** Segundos de cómputo por segundo de audio. < 1 es más rápido que realtime. */
+  rtf: number
+}
+
+export async function sintetizar(opts: OpcionesSintesis): Promise<ResultadoSintesis> {
+  const motor = obtenerMotor()
+  const estilo = obtenerEstilo()
+  const inicio = performance.now()
+
+  const { wav, duration } = await motor.call(
+    opts.texto,
+    opts.lang ?? 'es',
+    estilo,
+    opts.pasos ?? PASOS_DEFECTO,
+    opts.velocidad ?? VELOCIDAD_DEFECTO,
+    opts.silencio ?? SILENCIO_DEFECTO,
+    opts.alPaso ?? null,
+  )
+
+  const ms = performance.now() - inicio
+  const segundos = duration[0] ?? 0
+  return {
+    muestras: wav,
+    sampleRate: motor.sampleRate,
+    segundos,
+    ms,
+    rtf: segundos > 0 ? ms / 1000 / segundos : 0,
+  }
+}
+
+export function generarWavBlob(muestras: ArrayLike<number>, sampleRate: number): Blob {
+  return new Blob([writeWavFile(muestras, sampleRate)], { type: 'audio/wav' })
 }
