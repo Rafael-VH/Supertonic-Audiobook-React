@@ -1,3 +1,15 @@
+/** Concatena varios tramos de muestras en uno solo. */
+export function concatenarMuestras(partes: Float32Array[]): Float32Array {
+  const total = partes.reduce((suma, parte) => suma + parte.length, 0)
+  const salida = new Float32Array(total)
+  let desplazamiento = 0
+  for (const parte of partes) {
+    salida.set(parte, desplazamiento)
+    desplazamiento += parte.length
+  }
+  return salida
+}
+
 /**
  * Codificación WAV PCM16.
  *
