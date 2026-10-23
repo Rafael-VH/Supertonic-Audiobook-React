@@ -11,7 +11,6 @@ import { useState } from 'react'
 import {
   cancelar,
   cargarVoz,
-  detectarWebGPU,
   estaIniciado,
   generarWavBlob,
   inicializarMotor,
@@ -34,11 +33,11 @@ export default function App() {
   async function prepararMotor() {
     if (estaIniciado()) return
 
-    setEstado('Detectando backend…')
-    const activo = await detectarWebGPU()
+    setEstado('Cargando modelos…')
 
+    // Sin WebGPU a propósito: en GPU móvil ORT devuelve audio corrupto.
+    // Ver el comentario de inicializarMotor() en data/motor-tts.ts.
     const { backend: real } = await inicializarMotor({
-      usarWebGPU: activo,
       alModelo: (nombre, i, total) => setEstado(`Cargando modelos ${i}/${total}: ${nombre}`),
       alProgreso: (p) => {
         if (p.desdeCache) {

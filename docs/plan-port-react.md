@@ -249,6 +249,8 @@ Inspección del header de `vector_estimator.onnx`: **solo ops estándar** (Conv,
 - Requiere **contexto seguro (HTTPS)** → GitHub Pages ✅.
 - El ORT Web de WebGPU compila los kernels por subgrafo; con ops estándar funciona sin intervención.
 
+**CORREGIDO — WebGPU está desactivado por defecto.** El EP `webgpu` de ORT 1.30 **devuelve audio corrupto en GPUs móviles**: la app sintetiza y reporta `backend: webgpu`, pero el WAV resultante es un tono continuo (un zumbido periódico), no voz, y **no lanza ningún error**. Evidencia: el mismo texto en la misma versión desplegada produce voz correcta en una laptop (sin adaptador WebGPU → `backend: wasm`) y basura en un celular (`backend: webgpu`). El audio WASM fue verificado por análisis del WAV (44,1 kHz, F0 150–425 Hz, ZCR normal), no sólo "suena bien". Consecuencia: `inicializarMotor()` usa `usarWebGPU: false` por defecto; el cableado hasta el worker queda intacto para reactivarlo cuando se valide en hardware real. Esto invalida el supuesto de velocidad de §5.3 (20–80×): **hoy la única ruta confiable es WASM**.
+
 ### 5.3 WASM: multihilo sí es posible en GitHub Pages — **CORREGIDO**
 
 El plan original afirmaba que sin cabeceras no hay `SharedArrayBuffer` y por tanto WASM queda single-thread. **La primera parte es cierta; la conclusión no.**

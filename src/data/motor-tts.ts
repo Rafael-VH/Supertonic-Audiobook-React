@@ -86,17 +86,6 @@ function pedir(peticion: Peticion, oyentes: Oyentes = {}): Promise<Respuesta> {
   })
 }
 
-export async function detectarWebGPU(): Promise<boolean> {
-  try {
-    const nav = navigator as unknown as { gpu?: { requestAdapter: () => Promise<unknown | null> } }
-    if (!nav.gpu) return false
-    const adapter = await nav.gpu.requestAdapter()
-    return !!adapter
-  } catch {
-    return false
-  }
-}
-
 export function estaIniciado(): boolean {
   return worker !== null && backendActivo !== null
 }
@@ -107,12 +96,21 @@ export function backend(): Backend | null {
 
 export async function inicializarMotor(
   opts: {
+    /**
+     * ponytail: WebGPU apagado por defecto a propósito.
+     *
+     * El EP `webgpu` de ORT 1.30 devuelve audio corrupto en GPUs móviles: un
+     * tono continuo en vez de voz, sin lanzar ningún error (verificado en un
+     * celular que reportaba `backend: webgpu`). En WASM el audio es correcto en
+     * todos los equipos probados. Re-activar sólo después de validar en
+     * hardware real; el cableado hasta el worker queda intacto.
+     */
     usarWebGPU?: boolean
     alProgreso?: (progreso: { archivo: string; cargado: number; total: number; desdeCache: boolean }) => void
     alModelo?: (nombre: string, indice: number, total: number) => void
   } = {},
 ): Promise<{ backend: Backend }> {
-  const usarGpu = opts.usarWebGPU ?? (await detectarWebGPU())
+  const usarGpu = opts.usarWebGPU === true
 
   const respuesta = await pedir(
     {
