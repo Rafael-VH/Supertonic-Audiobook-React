@@ -407,7 +407,7 @@ Si se quiere control total, se puede llamar `textToSpeech.batch(textList, langLi
 Orden de implementación (de menor a mayor riesgo):
 
 1. **Layout**: header con título + botón de ajustes; tabs "Entrada y salida" / "Síntesis y registro"; responsive con `useMediaQuery('(min-width: 900px)')` replicando el criterio del desktop.
-2. **Panel de entrada**: selector de carpeta (`<input type="file" webkitdirectory multiple>`), lista de `.md` con orden natural, checkboxes, Todo/Nada/Refrescar, contador.
+2. **Panel de entrada**: selector de **un archivo `.md` por vez** (`<input type="file" accept=".md">`). **Decisión de producto:** la versión web no puede elegir carpeta, así que se abandona el `webkitdirectory` del desktop; cada `.md` sigue siendo una unidad de audio, igual que en el original. Flujo: `limpiarMarkdown()` → `segmentarTexto()` → síntesis por segmento → concatenar → un WAV con el nombre del archivo.
 3. **Panel de opciones**: formatos (checkboxes), voz (10), idioma (32), pasos (5–12), velocidad (0.7–2.0), botón Escuchar.
 4. **Log**: componente con niveles coloreados, autoscroll, tope de ~20 líneas por archivo.
 5. **Progreso**: barra + % + estado.
