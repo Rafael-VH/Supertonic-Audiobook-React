@@ -2,14 +2,17 @@
  * Walking skeleton de la web app: un texto → un WAV, con modelos desde
  * Hugging Face y caché en Cache Storage.
  *
- * La UI completa (archivos, i18n, log, ajustes) llega en la Fase 4 del plan
- * (ver docs/plan-port-react.md). Esto sólo prueba el camino completo.
+ * La inferencia corre en un Web Worker, así que la pestaña no se congela y
+ * se puede cancelar. La UI completa llega en la Fase 4 del plan
+ * (ver docs/plan-port-react.md).
  */
 
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import {
+  cancelar,
   cargarVoz,
   detectarWebGPU,
+  estaIniciado,
   generarWavBlob,
   inicializarMotor,
   sintetizar,
@@ -18,6 +21,7 @@ import {
 
 const TEXTO_INICIAL = 'Hola, esto es una prueba de síntesis de voz en el navegador.'
 const MB = 1024 * 1024
+const MAX_CARACTERES = 1000
 
 export default function App() {
   const [texto, setTexto] = useState(TEXTO_INICIAL)
@@ -27,16 +31,14 @@ export default function App() {
   const [detalle, setDetalle] = useState('')
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
 
-  const motorListo = useRef(false)
-
   async function prepararMotor() {
-    if (motorListo.current) return
+    if (estaIniciado()) return
 
     setEstado('Detectando backend…')
-    const gpu = await detectarWebGPU()
+    const activo = await detectarWebGPU()
 
-    const { backend: activo } = await inicializarMotor({
-      usarWebGPU: gpu,
+    const { backend: real } = await inicializarMotor({
+      usarWebGPU: activo,
       alModelo: (nombre, i, total) => setEstado(`Cargando modelos ${i}/${total}: ${nombre}`),
       alProgreso: (p) => {
         if (p.desdeCache) {
@@ -48,15 +50,12 @@ export default function App() {
       },
     })
 
-    setBackend(activo)
-    setEstado(`Backend: ${activo.toUpperCase()}. Cargando voz M1…`)
+    setBackend(real)
+    setEstado(`Backend: ${real.toUpperCase()}. Cargando voz M1…`)
     await cargarVoz({
       voz: 'M1',
       alProgreso: (p) => setEstado(p.desdeCache ? 'Voz M1 en caché' : 'Descargando voz M1…'),
     })
-
-    motorListo.current = true
-    setEstado('Listo para generar.')
   }
 
   async function generar() {
@@ -65,7 +64,12 @@ export default function App() {
     try {
       await prepararMotor()
       setEstado('Sintetizando…')
-      const res = await sintetizar({ texto })
+
+      const res = await sintetizar({
+        texto,
+        alPaso: (hecho, total) => setEstado(`Sintetizando… paso ${hecho}/${total}`),
+      })
+
       const blob = generarWavBlob(res.muestras, res.sampleRate)
       if (audioUrl) URL.revokeObjectURL(audioUrl)
       setAudioUrl(URL.createObjectURL(blob))
@@ -75,7 +79,8 @@ export default function App() {
       )
       setEstado('Listo.')
     } catch (error) {
-      setEstado(`Error: ${error instanceof Error ? error.message : String(error)}`)
+      const mensaje = error instanceof Error ? error.message : String(error)
+      setEstado(mensaje === 'Cancelado.' ? 'Cancelado.' : `Error: ${mensaje}`)
     } finally {
       setOcupado(false)
     }
@@ -88,16 +93,23 @@ export default function App() {
 
       <textarea
         value={texto}
-        onChange={(e) => setTexto(e.target.value)}
+        onChange={(e) => setTexto(e.target.value.slice(0, MAX_CARACTERES))}
         rows={4}
         style={{ width: '100%', font: 'inherit', padding: '0.5rem' }}
-        disabled={ocupado}
       />
+      <p style={{ margin: '0.25rem 0 0.75rem', opacity: 0.6, fontSize: '0.85rem' }}>
+        {texto.length}/{MAX_CARACTERES} caracteres
+      </p>
 
       <p>
         <button onClick={generar} disabled={ocupado}>
           {ocupado ? 'Procesando…' : 'Generar audio'}
         </button>
+        {ocupado && (
+          <button onClick={cancelar} style={{ marginLeft: '0.5rem' }}>
+            Cancelar
+          </button>
+        )}
         {backend && <span style={{ marginLeft: '1rem', opacity: 0.7 }}>backend: {backend}</span>}
       </p>
 
