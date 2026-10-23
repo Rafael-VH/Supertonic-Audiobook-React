@@ -330,7 +330,10 @@ input[type='range']:disabled {
   gap: 0.6rem;
 }
 
-button {
+/* Los botones y el enlace de descarga comparten la misma forma de control:
+   el enlace es un <a> (descarga nativa), no un <button>. */
+button,
+.principal {
   font: inherit;
   font-size: 0.95rem;
   font-weight: 550;
