@@ -6,11 +6,10 @@
  * segmento → concatenar → descargar.
  *
  * La inferencia corre en un Web Worker, así que la pestaña no se congela y se
- * puede cancelar. La UI completa (ajustes, temas, formatos) es la Fase 4
- * restante del plan: docs/plan-port-react.md.
+ * puede cancelar. Los ajustes se guardan en localStorage.
  */
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { limpiarMarkdown } from './domain/limpiar-markdown'
 import { MAX_CHARS_PER_SEGMENT, segmentarTexto } from './domain/segmentar-texto'
 import {
@@ -23,12 +22,25 @@ import {
   type Backend,
 } from './data/motor-tts'
 import { concatenarMuestras } from './data/wav'
+import {
+  IDIOMAS,
+  PASOS_MAX,
+  PASOS_MIN,
+  VELOCIDAD_MAX,
+  VELOCIDAD_MIN,
+  VOCES,
+  cargarAjustes,
+  guardarAjustes,
+  type Ajustes,
+} from './data/ajustes'
 
 const MB = 1024 * 1024
 /** ~900 caracteres por minuto de audio en español. Sólo para estimar. */
 const CHARS_POR_MINUTO = 900
 /** Por encima de esto avisamos: son decenas de minutos de cómputo. */
 const AVISO_CARACTERES = 50_000
+
+const estiloEtiqueta: React.CSSProperties = { fontSize: '0.9rem', opacity: 0.8 }
 
 export default function App() {
   const [texto, setTexto] = useState('')
@@ -38,9 +50,21 @@ export default function App() {
   const [backend, setBackend] = useState<Backend | null>(null)
   const [detalle, setDetalle] = useState('')
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
+  const [ajustes, setAjustes] = useState<Ajustes>(cargarAjustes)
+
+  /** Voz que tiene cargada el worker; evita recargarla en cada corrida. */
+  const vozCargada = useRef<string | null>(null)
+
+  useEffect(() => {
+    guardarAjustes(ajustes)
+  }, [ajustes])
 
   const segmentos = texto ? segmentarTexto(texto) : []
   const minutos = texto.length / CHARS_POR_MINUTO
+
+  function cambiar<K extends keyof Ajustes>(campo: K, valor: Ajustes[K]) {
+    setAjustes((previos) => ({ ...previos, [campo]: valor }))
+  }
 
   async function alElegirArchivo(evento: React.ChangeEvent<HTMLInputElement>) {
     const archivo = evento.target.files?.[0]
@@ -56,30 +80,36 @@ export default function App() {
   }
 
   async function prepararMotor() {
-    if (estaIniciado()) return
+    if (!estaIniciado()) {
+      setEstado('Cargando modelos…')
 
-    setEstado('Cargando modelos…')
+      // Sin WebGPU a propósito: en GPU móvil ORT devuelve audio corrupto.
+      // Ver el comentario de inicializarMotor() en data/motor-tts.ts.
+      const { backend: real } = await inicializarMotor({
+        alModelo: (nombre, i, total) => setEstado(`Cargando modelos ${i}/${total}: ${nombre}`),
+        alProgreso: (p) => {
+          if (p.desdeCache) {
+            setEstado(`Modelo en caché: ${p.archivo}`)
+            return
+          }
+          const pct = p.total ? Math.round((p.cargado / p.total) * 100) : 0
+          setEstado(`Descargando ${p.archivo} ${pct}% (${(p.cargado / MB).toFixed(1)} MB)`)
+        },
+      })
 
-    // Sin WebGPU a propósito: en GPU móvil ORT devuelve audio corrupto.
-    // Ver el comentario de inicializarMotor() en data/motor-tts.ts.
-    const { backend: real } = await inicializarMotor({
-      alModelo: (nombre, i, total) => setEstado(`Cargando modelos ${i}/${total}: ${nombre}`),
-      alProgreso: (p) => {
-        if (p.desdeCache) {
-          setEstado(`Modelo en caché: ${p.archivo}`)
-          return
-        }
-        const pct = p.total ? Math.round((p.cargado / p.total) * 100) : 0
-        setEstado(`Descargando ${p.archivo} ${pct}% (${(p.cargado / MB).toFixed(1)} MB)`)
-      },
-    })
+      setBackend(real)
+      vozCargada.current = null
+    }
 
-    setBackend(real)
-    setEstado(`Backend: ${real.toUpperCase()}. Cargando voz M1…`)
-    await cargarVoz({
-      voz: 'M1',
-      alProgreso: (p) => setEstado(p.desdeCache ? 'Voz M1 en caché' : 'Descargando voz M1…'),
-    })
+    if (vozCargada.current !== ajustes.voz) {
+      setEstado(`Cargando voz ${ajustes.voz}…`)
+      await cargarVoz({
+        voz: ajustes.voz,
+        alProgreso: (p) =>
+          setEstado(p.desdeCache ? `Voz ${ajustes.voz} en caché` : `Descargando voz ${ajustes.voz}…`),
+      })
+      vozCargada.current = ajustes.voz
+    }
   }
 
   async function generar() {
@@ -103,6 +133,9 @@ export default function App() {
         setEstado(`Sintetizando segmento ${i + 1}/${partes.length}…`)
         const res = await sintetizar({
           texto: partes[i],
+          lang: ajustes.lang,
+          pasos: ajustes.pasos,
+          velocidad: ajustes.velocidad,
           alPaso: (hecho, total) =>
             setEstado(`Segmento ${i + 1}/${partes.length} · paso ${hecho}/${total}`),
         })
@@ -167,6 +200,93 @@ export default function App() {
           </details>
         </>
       )}
+
+      <details style={{ marginTop: '0.75rem' }}>
+        <summary style={{ cursor: 'pointer' }}>Ajustes</summary>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'auto 1fr',
+            gap: '0.5rem 0.75rem',
+            alignItems: 'center',
+            maxWidth: '24rem',
+            marginTop: '0.6rem',
+          }}
+        >
+          <label htmlFor="voz" style={estiloEtiqueta}>
+            Voz
+          </label>
+          <select
+            id="voz"
+            value={ajustes.voz}
+            disabled={ocupado}
+            onChange={(e) => cambiar('voz', e.target.value)}
+          >
+            {VOCES.map((voz) => (
+              <option key={voz} value={voz}>
+                {voz}
+              </option>
+            ))}
+          </select>
+
+          <label htmlFor="idioma" style={estiloEtiqueta}>
+            Idioma
+          </label>
+          <select
+            id="idioma"
+            value={ajustes.lang}
+            disabled={ocupado}
+            onChange={(e) => cambiar('lang', e.target.value)}
+          >
+            {IDIOMAS.map(([codigo, nombre]) => (
+              <option key={codigo} value={codigo}>
+                {nombre}
+              </option>
+            ))}
+          </select>
+
+          <label htmlFor="pasos" style={estiloEtiqueta}>
+            Pasos
+          </label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <input
+              id="pasos"
+              type="range"
+              min={PASOS_MIN}
+              max={PASOS_MAX}
+              step={1}
+              value={ajustes.pasos}
+              disabled={ocupado}
+              onChange={(e) => cambiar('pasos', Number(e.target.value))}
+              style={{ flex: 1 }}
+            />
+            <span style={{ width: '2ch', textAlign: 'right' }}>{ajustes.pasos}</span>
+          </div>
+
+          <label htmlFor="velocidad" style={estiloEtiqueta}>
+            Velocidad
+          </label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <input
+              id="velocidad"
+              type="range"
+              min={VELOCIDAD_MIN}
+              max={VELOCIDAD_MAX}
+              step={0.05}
+              value={ajustes.velocidad}
+              disabled={ocupado}
+              onChange={(e) => cambiar('velocidad', Number(e.target.value))}
+              style={{ flex: 1 }}
+            />
+            <span style={{ width: '4ch', textAlign: 'right' }}>
+              {ajustes.velocidad.toFixed(2)}
+            </span>
+          </div>
+        </div>
+        <p style={{ ...estiloEtiqueta, marginTop: '0.5rem' }}>
+          Más pasos = mejor calidad y más tiempo. La velocidad 1.1 es la del desktop.
+        </p>
+      </details>
 
       <p style={{ marginTop: '0.75rem' }}>
         <button onClick={generar} disabled={ocupado || !texto}>
