@@ -13,8 +13,23 @@ const aislamiento = {
   'Cross-Origin-Embedder-Policy': 'require-corp',
 }
 
+/**
+ * onnxruntime-web referencia su wasm con `new URL(..., import.meta.url)`, así
+ * que Vite emite una copia en `assets/` de 27 MB que nunca se pide: el worker
+ * fija `ort.env.wasm.wasmPaths` y usa la de `public/ort/`. Sin esto, el deploy
+ * lleva el mismo wasm dos veces.
+ */
+const sinWasmDuplicado = {
+  name: 'sin-wasm-duplicado',
+  generateBundle(_opciones: unknown, bundle: Record<string, unknown>) {
+    for (const archivo of Object.keys(bundle)) {
+      if (archivo.endsWith('.wasm')) delete bundle[archivo]
+    }
+  },
+}
+
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), sinWasmDuplicado],
   base: './',
   server: { headers: aislamiento },
   preview: { headers: aislamiento },

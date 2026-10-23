@@ -5,15 +5,12 @@ const src = path.resolve('node_modules/onnxruntime-web/dist')
 const dst = path.resolve('public/ort')
 fs.mkdirSync(dst, { recursive: true })
 
+// Solo el build "jsep": es el único que pide el navegador (verificado en
+// runtime). Las variantes asyncify y no-jsep suman ~39 MB que nunca se
+// descargan, y `ort.webgpu.mjs`/`ort.wasm.mjs` no se importan.
 const patterns = [
-  'ort-wasm-simd-threaded.wasm',
-  'ort-wasm-simd-threaded.mjs',
-  'ort-wasm-simd-threaded.asyncify.wasm',
-  'ort-wasm-simd-threaded.asyncify.mjs',
   'ort-wasm-simd-threaded.jsep.wasm',
   'ort-wasm-simd-threaded.jsep.mjs',
-  'ort.webgpu.mjs',
-  'ort.wasm.mjs',
 ]
 
 for (const p of patterns) {
