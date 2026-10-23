@@ -5,6 +5,7 @@ import {
   cargarAjustes,
   guardarAjustes,
   normalizarAjustes,
+  temaDelSistema,
   type Almacen,
 } from '../src/data/ajustes'
 
@@ -49,12 +50,36 @@ describe('normalizarAjustes', () => {
   it('redondea los pasos', () => {
     expect(normalizarAjustes({ pasos: 7.6 }).pasos).toBe(8)
   })
+
+  it('sólo acepta los dos temas conocidos', () => {
+    expect(normalizarAjustes({ tema: 'oscuro' }).tema).toBe('oscuro')
+    expect(normalizarAjustes({ tema: 'claro' }).tema).toBe('claro')
+    expect(normalizarAjustes({ tema: 'sepia' }).tema).toBe(AJUSTES_DEFECTO.tema)
+  })
+})
+
+describe('temaDelSistema', () => {
+  it('usa la preferencia del sistema cuando existe', () => {
+    const g = globalThis as any
+    const original = g.matchMedia
+    g.matchMedia = (consulta: string) => ({ matches: consulta.includes('dark') })
+    expect(temaDelSistema()).toBe('oscuro')
+    g.matchMedia = original
+  })
+
+  it('cae en claro sin matchMedia', () => {
+    const g = globalThis as any
+    const original = g.matchMedia
+    g.matchMedia = undefined
+    expect(temaDelSistema()).toBe('claro')
+    g.matchMedia = original
+  })
 })
 
 describe('cargarAjustes / guardarAjustes', () => {
   it('hace roundtrip', () => {
     const almacen = almacenFalso()
-    const elegidos = { voz: 'F3', lang: 'pt', pasos: 8, velocidad: 1.3 }
+    const elegidos = { voz: 'F3', lang: 'pt', pasos: 8, velocidad: 1.3, tema: 'oscuro' as const }
     guardarAjustes(elegidos, almacen)
     expect(cargarAjustes(almacen)).toEqual(elegidos)
   })

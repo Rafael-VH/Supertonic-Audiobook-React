@@ -5,11 +5,14 @@
  * 5 pasos, velocidad 1.1, voz M1.
  */
 
+export type Tema = 'claro' | 'oscuro'
+
 export type Ajustes = {
   voz: string
   lang: string
   pasos: number
   velocidad: number
+  tema: Tema
 }
 
 /** Sólo lo que necesitamos de localStorage; así los tests no necesitan DOM. */
@@ -66,6 +69,16 @@ export const AJUSTES_DEFECTO: Ajustes = {
   lang: 'es',
   pasos: 5,
   velocidad: 1.1,
+  tema: 'claro',
+}
+
+/** Preferencia del sistema; en un entorno sin `matchMedia` (tests) es 'claro'. */
+export function temaDelSistema(): Tema {
+  try {
+    return globalThis.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'oscuro' : 'claro'
+  } catch {
+    return 'claro'
+  }
 }
 
 export const CLAVE_AJUSTES = 'supertonic.ajustes'
@@ -88,6 +101,7 @@ export function normalizarAjustes(bruto: unknown): Ajustes {
     lang: IDIOMAS.some(([codigo]) => codigo === datos.lang) ? datos.lang! : AJUSTES_DEFECTO.lang,
     pasos: Math.round(acotar(datos.pasos, PASOS_MIN, PASOS_MAX, AJUSTES_DEFECTO.pasos)),
     velocidad: acotar(datos.velocidad, VELOCIDAD_MIN, VELOCIDAD_MAX, AJUSTES_DEFECTO.velocidad),
+    tema: datos.tema === 'oscuro' || datos.tema === 'claro' ? datos.tema : AJUSTES_DEFECTO.tema,
   }
 }
 
@@ -97,7 +111,8 @@ export function cargarAjustes(almacen?: Almacen): Ajustes {
 
   try {
     const texto = destino.getItem(CLAVE_AJUSTES)
-    return texto ? normalizarAjustes(JSON.parse(texto)) : { ...AJUSTES_DEFECTO }
+    if (!texto) return { ...AJUSTES_DEFECTO, tema: temaDelSistema() }
+    return normalizarAjustes(JSON.parse(texto))
   } catch {
     return { ...AJUSTES_DEFECTO }
   }
