@@ -537,7 +537,7 @@ Orden de implementación (de menor a mayor riesgo):
 - [ ] La UI muestra el backend detectado y un ETA antes de procesar. → backend ✅, ETA de cómputo ⬜.
 - [x] La caché usa la URL estable como clave: recargar no vuelve a descargar (§11.8). No se esperó 24 h para confirmar el vencimiento de la firma.
 - [ ] RTF medido y documentado para WebGPU y para WASM en al menos 2 máquinas, con la tabla del §11 actualizada. → WASM medido en una sola máquina (§11.3); WebGPU no.
-- [ ] README en español con requisitos, licencias (MIT código / RAIL-M pesos) y créditos. → existe, pero sigue diciendo "Fase 0" y ofrece WebGPU como camino principal: está desactualizado.
+- [x] README en español con requisitos, licencias (MIT código / RAIL-M pesos) y créditos. → reescrito el 2026-10-24 para el usuario final (uso, esperas, ajustes, limitaciones); los detalles técnicos quedaron en `docs/desarrollo.md`.
 
 ---
 
