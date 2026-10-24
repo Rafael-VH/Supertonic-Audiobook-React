@@ -62,6 +62,8 @@ Registro de todo lo que hace hoy la app y de lo que está planificado. Cada fila
 | ✅ | Caché persistente | Guarda los pesos en Cache Storage (`supertonic-modelos-v1`) bajo la URL estable: recargar no vuelve a descargar. | `data/cache-modelos.ts` |
 | ✅ | Descarga sin bufferizar | Usa `response.body.tee()` + `cache.put` para no materializar los 256 MB del ONNX grande en memoria. | `data/cache-modelos.ts` |
 | ✅ | Inicialización única por visita | `inicializarMotor()` reutiliza la misma promesa: no se re-verifica el modelo dentro de la pestaña, ni siquiera tras cancelar. | `data/motor-tts.ts` |
+| ✅ | Precarga al elegir archivo | Con el archivo aceptado, prepara modelos y voz en segundo plano mientras se ajustan las opciones; *Generar* espera ese mismo trabajo y no lo repite. | `ui/useMotor.ts`, `App.tsx` |
+| ✅ | ETA de cómputo | Estima el tiempo restante con los ratios reales del equipo (audio por carácter y RTF) medidos en los primeros segmentos, y lo muestra junto al progreso. | `domain/eta.ts`, `App.tsx` |
 | ✅ | Voz a demanda | Carga el JSON de la voz elegida y lo mantiene mientras no cambie el ajuste. | `data/motor-tts.ts`, `workers/tts.worker.ts` |
 | ✅ | Inferencia en Web Worker | El motor corre fuera del hilo de UI: la pestaña no se congela y el progreso se pinta en vivo. | `workers/tts.worker.ts` |
 | ✅ | WASM multihilo | Con `crossOriginIsolated` usa hasta 4 hilos; si no hay aislamiento, cae a 1 sin fallar. | `workers/tts.worker.ts` |
@@ -74,20 +76,20 @@ Registro de todo lo que hace hoy la app y de lo que está planificado. Cada fila
 |---|---|---|---|
 | ✅ | Build con typecheck | `tsc --noEmit` + Vite; emite `dist/` de ~28 MB sin el WASM duplicado. | `package.json`, `vite.config.ts` |
 | ✅ | Deploy automático | Push a `main` construye y publica en GitHub Pages. | `.github/workflows/deploy.yml` |
-| ✅ | Tests unitarios | 39 tests de dominio y adaptadores con Vitest. | `tests/` |
+| ✅ | Tests unitarios | 53 tests con Vitest: dominio, adaptadores y UI de la precarga (jsdom). | `tests/` |
 | ✅ | Favicon sin 404 | Icono inline como data URI, sin archivo binario extra. | `index.html` |
 
 ## Próximas funcionalidades
 
 Ordenadas por relación valor/riesgo. Las que llevan \* no están en [plan §12](plan-port-react.md#12-plan-de-mejoras-2026-10-24): salen de la paridad con la app de escritorio o de huecos detectados en el código.
 
+**Plan de ejecución por fases:** [plan-implementacion.md](plan-implementacion.md).
+
 | Estado | Funcionalidad | Qué hará | Prioridad |
 |---|---|---|---|
-| ⬜ | Precarga del motor | Arrancar la descarga y la preparación al elegir el archivo, para que la espera se solape con los ajustes en vez de empezar al tocar *Generar*. | Alta |
-| ⬜ | ETA de cómputo | Estimar la espera (`duración del audio × RTF`) y mostrarla antes y durante la generación, no sólo la duración del audio. | Alta |
 | ⬜ | Log de síntesis | Reemplazar la línea de estado por un registro con niveles, autoscroll y tope de líneas, como el de la app de escritorio. | Alta |
 | ⬜ | Orquestador en el dominio | Extraer el flujo de `App.tsx` a `domain/procesar-archivo.ts` con dobles, para poder testearlo. | Media |
-| ⬜ | Tests de UI | Cubrir selección de archivo, cambio de idioma y aparición de los ajustes con `@testing-library/react`. | Media |
+| ⬜ | Tests de UI (ampliar) | Sumar a la cobertura actual selección de archivo, cambio de idioma y cambio de voz con `@testing-library/react`. | Media |
 | ⬜ | Selector de formatos | Mostrar WAV activo y MP3/OGG/FLAC deshabilitados con *próximamente*, como promete el plan. | Media |
 | ⬜ | i18n ES/EN | Interfaz bilingüe con las mismas claves que la app de escritorio. | Media |
 | ⬜ | Acerca de | Versión, créditos y licencias (MIT del código, OpenRAIL-M de los pesos) accesibles desde la UI. | Media |

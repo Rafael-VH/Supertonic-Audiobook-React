@@ -37,12 +37,14 @@ src/
 ├── index.css                  # sistema visual completo (variables + componentes)
 ├── domain/                    # puro: sin React, sin DOM, sin red
 │   ├── limpiar-markdown.ts    # Markdown → texto hablable
-│   └── segmentar-texto.ts     # texto → segmentos de hasta 1500 caracteres
+│   ├── segmentar-texto.ts     # texto → segmentos de hasta 1500 caracteres
+│   └── eta.ts                 # tiempo restante a partir de lo medido
 ├── data/                      # adaptadores concretos
 │   ├── ajustes.ts             # defaults, validación y localStorage
 │   ├── motor-tts.ts           # cliente del worker (promesas sobre mensajes)
 │   ├── cache-modelos.ts       # descarga de HF + Cache Storage
 │   └── wav.ts                 # Float32Array → WAV PCM16
+├── ui/useMotor.ts             # preparación compartida por precarga y Generar
 ├── workers/tts.worker.ts      # motor ORT + helper.js, fuera del hilo de UI
 └── lib/supertonic/helper.js   # vendor MIT: se copia, no se toca
 tests/                         # vitest, un archivo por unidad
@@ -77,6 +79,8 @@ Reglas que sostienen la arquitectura:
 Detalles que no conviene romper:
 
 - **Una inicialización por visita.** `inicializarMotor()` reutiliza la misma promesa: un doble clic no dispara dos cargas y cancelar no obliga a re-verificar el modelo. Si la carga falla, la promesa se limpia para permitir reintentar. Cubierto por `tests/motor-una-vez.test.ts`.
+- **Precarga compartida.** `ui/useMotor.ts` expone `preparar(voz)`, que llama a `inicializarMotor()` y carga la voz. La precarga (al elegir archivo) y *Generar* usan el mismo hook: la segunda espera el trabajo de la primera. Las cargas de voz se serializan porque el worker tiene un solo estilo cargado.
+- **ETA calibrado.** `domain/eta.ts` calcula el restante con los ratios medidos en los dos últimos segmentos (segundos de audio por carácter y RTF). Antes del primer segmento no hay estimación: un RTF de tabla mentiría en otro equipo.
 - **Cancelar es cooperativo.** Se marca la corrida y se corta antes del próximo segmento. No se usa `terminate()` porque destruye las sesiones de ORT y obliga a recrearlas (≈11 s en caliente y minutos con el modelo frío). El costo es que cancelar espera al segmento en curso.
 - **`wasmPaths` se calcula en el hilo principal** (`new URL('ort/', document.baseURI)`) y viaja en `init`: dentro del worker no existe `document`. Una ruta relativa hace que ORT la resuelva contra el módulo y falle con `no available backend found`.
 - **`ort.env.wasm.proxy = false`.** Con `proxy = true`, ORT detacha los `ArrayBuffer` de los tensores que este `helper.js` reutiliza en cada paso y la segunda síntesis explota.
@@ -87,19 +91,19 @@ Detalles que no conviene romper:
 ## Tests y verificación
 
 ```bash
-npm test        # 39 tests: limpiar-markdown, segmentar-texto, ajustes, motor, WAV
+npm test        # 53 tests: dominio, adaptadores, motor y UI de la precarga
 npm run build   # typecheck + bundle
 ```
 
-No hay linter ni formatter: el typecheck del build es la red. Los tests corren en entorno `node`, así que las unidades con DOM o Worker se prueban con dobles (ver `motor-una-vez.test.ts`); no hay tests de UI.
+No hay linter ni formatter: el typecheck del build es la red. Los tests corren en entorno `node` por defecto; los de UI usan el docblock `// @vitest-environment jsdom` (Vitest acepta `tests/**/*.test.{ts,tsx}`). Las unidades con Worker se prueban con dobles, como en `tests/motor-una-vez.test.ts`.
 
 Antes de dar por buena una UI o un cambio en la carga del motor, además de los tests:
 
 1. `npm run build && npm run preview` y abrir el build real (no sólo `dev`).
 2. Consola limpia: sin `404` de `ort-wasm-*.mjs` ni de favicon.
 3. `crossOriginIsolated === true` en la consola (`coi: true` en el log del worker).
-4. Cargar un `.md`, comprobar que aparecen los ajustes en dos columnas y ajustar voz o pasos.
-5. Generar un texto corto y descargar el WAV.
+4. Cargar un `.md`: deben aparecer los ajustes en dos columnas y, sin tocar *Generar*, arrancar la preparación (chip «preparando modelos…» y mensajes de descarga).
+5. Generar un texto corto y descargar el WAV; tras el primer segmento debe verse «Faltan ≈ …».
 6. Generar otra vez sin recargar: no debe decir "Cargando modelos".
 7. Cancelar a mitad y comprobar que el siguiente intento no vuelve a cargar el modelo.
 
@@ -125,4 +129,4 @@ Push a `main` dispara [`.github/workflows/deploy.yml`](../.github/workflows/depl
 
 ## Estado y siguientes pasos
 
-La foto actual del repo por fase está en [plan §0](plan-port-react.md#0-estado-de-implementación-2026-10-24) y la lista priorizada de mejoras en [plan §12](plan-port-react.md#12-plan-de-mejoras-2026-10-24). Lo pendiente de mayor valor: precarga del motor al elegir archivo, ETA de cómputo, log de síntesis, tests de UI y selector de formatos.
+La foto actual del repo por fase está en [plan §0](plan-port-react.md#0-estado-de-implementación-2026-10-24) y la lista priorizada de mejoras en [plan §12](plan-port-react.md#12-plan-de-mejoras-2026-10-24). Lo pendiente de mayor valor: log de síntesis, orquestador con tests del flujo, selector de formatos y ampliar los tests de UI.
