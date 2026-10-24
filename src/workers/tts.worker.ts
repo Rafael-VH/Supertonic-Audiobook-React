@@ -3,8 +3,11 @@
  *
  * Motivo: con `proxy = false`, ORT bloquea el hilo donde corre. En el hilo de
  * UI eso congela la pestaña durante toda la síntesis (minutos en un libro).
- * Aquí el hilo principal queda libre, el progreso se puede pintar y
- * `terminate()` da cancelación real.
+ * Aquí el hilo principal queda libre y el progreso se puede pintar.
+ *
+ * El worker no se destruye al cancelar: la cancelación se resuelve en el hilo
+ * principal entre segmentos, para no repetir la carga del modelo ni la
+ * creación de sesiones de ORT durante la misma visita.
  *
  * El aislamiento (COOP/COEP) se hereda del documento, así que los hilos de
  * WASM funcionan igual dentro del worker.

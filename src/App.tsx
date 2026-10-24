@@ -6,14 +6,15 @@
  * segmento → concatenar → descargar.
  *
  * La inferencia corre en un Web Worker, así que la pestaña no se congela y se
- * puede cancelar. Ajustes y tema se guardan en localStorage.
+ * puede cancelar entre segmentos. El motor se prepara una sola vez por visita:
+ * cancelar no lo descarga ni vuelve a verificar el modelo. Ajustes y tema se
+ * guardan en localStorage.
  */
 
 import { useLayoutEffect, useEffect, useRef, useState } from 'react'
 import { limpiarMarkdown } from './domain/limpiar-markdown'
 import { MAX_CHARS_PER_SEGMENT, segmentarTexto } from './domain/segmentar-texto'
 import {
-  cancelar,
   cargarVoz,
   estaIniciado,
   generarWavBlob,
@@ -75,6 +76,12 @@ export default function App() {
 
   /** Voz que tiene cargada el worker; evita recargarla en cada corrida. */
   const vozCargada = useRef<string | null>(null)
+
+  /**
+   * Cancelación cooperativa: se pide y se corta antes del próximo segmento. No
+   * se mata el worker, así el modelo sigue listo y no se re-verifica.
+   */
+  const cancelado = useRef(false)
 
   useEffect(() => {
     guardarAjustes(ajustes)
@@ -176,6 +183,11 @@ export default function App() {
     }
   }
 
+  function pedirCancelacion() {
+    cancelado.current = true
+    anunciar('Cancelando al terminar el segmento en curso…')
+  }
+
   async function generar() {
     const partes = segmentarTexto(texto)
     if (partes.length === 0) {
@@ -183,6 +195,7 @@ export default function App() {
       return
     }
 
+    cancelado.current = false
     setOcupado(true)
     setDetalle('')
     setProgreso({ segmento: 1, segmentos: partes.length, paso: 0, pasos: ajustes.pasos })
@@ -195,6 +208,7 @@ export default function App() {
       let sampleRate = 0
 
       for (let i = 0; i < partes.length; i++) {
+        if (cancelado.current) break
         setProgreso({ segmento: i + 1, segmentos: partes.length, paso: 0, pasos: ajustes.pasos })
         anunciar(`Sintetizando segmento ${i + 1} de ${partes.length}…`)
         const res = await sintetizar({
@@ -214,6 +228,15 @@ export default function App() {
         })
         muestras.push(res.muestras)
         sampleRate = res.sampleRate
+      }
+
+      if (cancelado.current) {
+        anunciar(
+          muestras.length === 0
+            ? 'Cancelado. No se generó audio.'
+            : `Cancelado tras ${muestras.length} de ${partes.length} segmentos. El modelo sigue cargado.`,
+        )
+        return
       }
 
       const audio = concatenarMuestras(muestras)
@@ -259,130 +282,135 @@ export default function App() {
         texto no se sube a ningún servidor.
       </p>
 
-      <section className="tarjeta">
-        <label
-          className={`zona${texto ? ' compacta' : ''}${arrastrando ? ' activa' : ''}`}
-          onDragOver={alArrastrarSobre}
-          onDragLeave={() => setArrastrando(false)}
-          onDrop={alSoltar}
-        >
-          <input
-            type="file"
-            accept=".md,.markdown,.txt,text/markdown,text/plain"
-            onChange={alElegirArchivo}
-            disabled={ocupado}
-          />
-          <strong>
-            {arrastrando
-              ? 'Soltá el archivo'
-              : texto
-                ? 'Cambiar archivo'
-                : 'Arrastrá tu archivo .md acá'}
-          </strong>
-          <span>
-            {texto ? 'arrastrá otro o hacé clic para elegirlo' : 'o hacé clic para elegirlo'}
-          </span>
-        </label>
+      <div className={`paneles${texto ? ' dos-columnas' : ''}`}>
+        <section className="tarjeta">
+          <label
+            className={`zona${texto ? ' compacta' : ''}${arrastrando ? ' activa' : ''}`}
+            onDragOver={alArrastrarSobre}
+            onDragLeave={() => setArrastrando(false)}
+            onDrop={alSoltar}
+          >
+            <input
+              type="file"
+              accept=".md,.markdown,.txt,text/markdown,text/plain"
+              onChange={alElegirArchivo}
+              disabled={ocupado}
+            />
+            <strong>
+              {arrastrando
+                ? 'Soltá el archivo'
+                : texto
+                  ? 'Cambiar archivo'
+                  : 'Arrastrá tu archivo .md acá'}
+            </strong>
+            <span>
+              {texto ? 'arrastrá otro o hacé clic para elegirlo' : 'o hacé clic para elegirlo'}
+            </span>
+          </label>
 
+          {texto && (
+            <>
+              <div className="meta">
+                <span className="chip fuerte">{nombreBase}.md</span>
+                <span className="chip">{texto.length.toLocaleString('es')} caracteres</span>
+                <span className="chip">
+                  {segmentos.length} {segmentos.length === 1 ? 'segmento' : 'segmentos'}
+                </span>
+                <span className="chip">~{minutos.toFixed(0)} min de audio</span>
+              </div>
+
+              {texto.length > AVISO_CARACTERES && (
+                <p className="aviso">
+                  Texto largo: en WASM puede tardar bastante más que el tiempo real. Probá primero
+                  con un capítulo.
+                </p>
+              )}
+
+              <details className="texto">
+                <summary>Ver y editar el texto limpio</summary>
+                <textarea value={texto} onChange={(e) => setTexto(e.target.value)} />
+              </details>
+            </>
+          )}
+        </section>
+
+        {/* Sin archivo no hay nada que ajustar: la tarjeta aparece al cargarlo. */}
         {texto && (
-          <>
-            <div className="meta">
-              <span className="chip fuerte">{nombreBase}.md</span>
-              <span className="chip">{texto.length.toLocaleString('es')} caracteres</span>
-              <span className="chip">
-                {segmentos.length} {segmentos.length === 1 ? 'segmento' : 'segmentos'}
-              </span>
-              <span className="chip">~{minutos.toFixed(0)} min de audio</span>
+          <section className="tarjeta">
+            <h2>Ajustes</h2>
+            <div className="rejilla">
+              <label htmlFor="voz">Voz</label>
+              <select
+                id="voz"
+                value={ajustes.voz}
+                disabled={ocupado}
+                onChange={(e) => cambiar('voz', e.target.value)}
+              >
+                {VOCES.map((voz) => (
+                  <option key={voz} value={voz}>
+                    {voz}
+                  </option>
+                ))}
+              </select>
+
+              <label htmlFor="idioma">Idioma</label>
+              <select
+                id="idioma"
+                value={ajustes.lang}
+                disabled={ocupado}
+                onChange={(e) => cambiar('lang', e.target.value)}
+              >
+                {IDIOMAS.map(([codigo, nombre]) => (
+                  <option key={codigo} value={codigo}>
+                    {nombre}
+                  </option>
+                ))}
+              </select>
+
+              <label htmlFor="pasos">Pasos</label>
+              <div className="rango">
+                <input
+                  id="pasos"
+                  type="range"
+                  min={PASOS_MIN}
+                  max={PASOS_MAX}
+                  step={1}
+                  value={ajustes.pasos}
+                  disabled={ocupado}
+                  onChange={(e) => cambiar('pasos', Number(e.target.value))}
+                />
+                <span className="valor">{ajustes.pasos}</span>
+              </div>
+
+              <label htmlFor="velocidad">Velocidad</label>
+              <div className="rango">
+                <input
+                  id="velocidad"
+                  type="range"
+                  min={VELOCIDAD_MIN}
+                  max={VELOCIDAD_MAX}
+                  step={0.05}
+                  value={ajustes.velocidad}
+                  disabled={ocupado}
+                  onChange={(e) => cambiar('velocidad', Number(e.target.value))}
+                />
+                <span className="valor">{ajustes.velocidad.toFixed(2)}×</span>
+              </div>
             </div>
-
-            {texto.length > AVISO_CARACTERES && (
-              <p className="aviso">
-                Texto largo: en WASM puede tardar bastante más que el tiempo real. Probá primero con
-                un capítulo.
-              </p>
-            )}
-
-            <details className="texto">
-              <summary>Ver y editar el texto limpio</summary>
-              <textarea value={texto} onChange={(e) => setTexto(e.target.value)} />
-            </details>
-          </>
+            <p className="nota">
+              Más pasos dan mejor calidad a cambio de más tiempo. El texto se corta en fragmentos de
+              hasta {MAX_CHARS_PER_SEGMENT} caracteres.
+            </p>
+          </section>
         )}
-      </section>
-
-      <section className="tarjeta">
-        <h2>Ajustes</h2>
-        <div className="rejilla">
-          <label htmlFor="voz">Voz</label>
-          <select
-            id="voz"
-            value={ajustes.voz}
-            disabled={ocupado}
-            onChange={(e) => cambiar('voz', e.target.value)}
-          >
-            {VOCES.map((voz) => (
-              <option key={voz} value={voz}>
-                {voz}
-              </option>
-            ))}
-          </select>
-
-          <label htmlFor="idioma">Idioma</label>
-          <select
-            id="idioma"
-            value={ajustes.lang}
-            disabled={ocupado}
-            onChange={(e) => cambiar('lang', e.target.value)}
-          >
-            {IDIOMAS.map(([codigo, nombre]) => (
-              <option key={codigo} value={codigo}>
-                {nombre}
-              </option>
-            ))}
-          </select>
-
-          <label htmlFor="pasos">Pasos</label>
-          <div className="rango">
-            <input
-              id="pasos"
-              type="range"
-              min={PASOS_MIN}
-              max={PASOS_MAX}
-              step={1}
-              value={ajustes.pasos}
-              disabled={ocupado}
-              onChange={(e) => cambiar('pasos', Number(e.target.value))}
-            />
-            <span className="valor">{ajustes.pasos}</span>
-          </div>
-
-          <label htmlFor="velocidad">Velocidad</label>
-          <div className="rango">
-            <input
-              id="velocidad"
-              type="range"
-              min={VELOCIDAD_MIN}
-              max={VELOCIDAD_MAX}
-              step={0.05}
-              value={ajustes.velocidad}
-              disabled={ocupado}
-              onChange={(e) => cambiar('velocidad', Number(e.target.value))}
-            />
-            <span className="valor">{ajustes.velocidad.toFixed(2)}×</span>
-          </div>
-        </div>
-        <p className="nota">
-          Más pasos dan mejor calidad a cambio de más tiempo. El texto se corta en fragmentos de
-          hasta {MAX_CHARS_PER_SEGMENT} caracteres.
-        </p>
-      </section>
+      </div>
 
       <section className="acciones">
         <button type="button" className="principal" onClick={generar} disabled={ocupado || !texto}>
           {ocupado ? 'Convirtiendo…' : 'Generar audio'}
         </button>
         {ocupado && (
-          <button type="button" className="fantasma" onClick={cancelar}>
+          <button type="button" className="fantasma" onClick={pedirCancelacion}>
             Cancelar
           </button>
         )}

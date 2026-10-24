@@ -137,6 +137,23 @@ body {
   color: var(--tenue);
 }
 
+/* --- Disposición --- */
+
+/* Sin archivo, la zona de carga es lo único que se ve. */
+.paneles {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+/* Con un archivo cargado, texto y ajustes comparten la fila. */
+.paneles.dos-columnas {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  gap: 1rem;
+  align-items: start;
+}
+
 /* --- Zona de archivo --- */
 
 .zona {
@@ -452,6 +469,13 @@ button:disabled {
 }
 
 /* --- Móvil --- */
+
+@media (max-width: 820px) {
+  /* En pantallas angostas las dos columnas vuelven a apilarse. */
+  .paneles.dos-columnas {
+    grid-template-columns: 1fr;
+  }
+}
 
 @media (max-width: 560px) {
   .app {

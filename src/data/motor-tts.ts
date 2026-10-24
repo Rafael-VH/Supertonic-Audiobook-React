@@ -4,8 +4,11 @@
  *
  * Por qué un worker (y no `ort.env.wasm.proxy`): el proxy de ORT transfiere los
  * tensores al worker y este `helper.js` los reutiliza, lo que revienta en la
- * segunda llamada. Además, con el motor en un worker propio la UI no se congela
- * y `terminate()` da cancelación real.
+ * segunda llamada. Además, con el motor en un worker propio la UI no se congela.
+ *
+ * Ciclo de vida: el motor se inicializa UNA vez por visita y no se destruye al
+ * cancelar. Cancelar es cooperativo (se corta entre segmentos) justamente para
+ * no repetir la verificación del modelo ni la creación de sesiones de ORT.
  */
 
 import type { Backend, EventoTts, Peticion, Respuesta } from '../workers/tts.worker'
@@ -34,6 +37,14 @@ let backendActivo: Backend | null = null
 let proximoId = 1
 const pendientes = new Map<number, Pendiente>()
 
+/**
+ * Una sola inicialización por visita: se reutiliza la misma promesa aunque se
+ * pida dos veces (doble clic, o un segundo `generar()` mientras el primero
+ * todavía carga modelos). Mientras la pestaña siga abierta, el modelo no se
+ * vuelve a verificar.
+ */
+let inicializacion: Promise<{ backend: Backend }> | null = null
+
 function asegurarWorker(): Worker {
   if (worker) return worker
 
@@ -48,6 +59,8 @@ function asegurarWorker(): Worker {
     for (const pendiente of pendientes.values()) pendiente.rechazar(error)
     pendientes.clear()
     worker = null
+    backendActivo = null
+    inicializacion = null
   }
 
   worker = nuevo
@@ -94,22 +107,37 @@ export function backend(): Backend | null {
   return backendActivo
 }
 
-export async function inicializarMotor(
-  opts: {
-    /**
-     * ponytail: WebGPU apagado por defecto a propósito.
-     *
-     * El EP `webgpu` de ORT 1.30 devuelve audio corrupto en GPUs móviles: un
-     * tono continuo en vez de voz, sin lanzar ningún error (verificado en un
-     * celular que reportaba `backend: webgpu`). En WASM el audio es correcto en
-     * todos los equipos probados. Re-activar sólo después de validar en
-     * hardware real; el cableado hasta el worker queda intacto.
-     */
-    usarWebGPU?: boolean
-    alProgreso?: (progreso: { archivo: string; cargado: number; total: number; desdeCache: boolean }) => void
-    alModelo?: (nombre: string, indice: number, total: number) => void
-  } = {},
-): Promise<{ backend: Backend }> {
+type OpcionesMotor = {
+  /**
+   * ponytail: WebGPU apagado por defecto a propósito.
+   *
+   * El EP `webgpu` de ORT 1.30 devuelve audio corrupto en GPUs móviles: un
+   * tono continuo en vez de voz, sin lanzar ningún error (verificado en un
+   * celular que reportaba `backend: webgpu`). En WASM el audio es correcto en
+   * todos los equipos probados. Re-activar sólo después de validar en
+   * hardware real; el cableado hasta el worker queda intacto.
+   */
+  usarWebGPU?: boolean
+  alProgreso?: (progreso: { archivo: string; cargado: number; total: number; desdeCache: boolean }) => void
+  alModelo?: (nombre: string, indice: number, total: number) => void
+}
+
+/**
+ * Prepara el motor si hace falta. Las llamadas siguientes en la misma visita
+ * devuelven la misma promesa y no vuelven a verificar el modelo.
+ */
+export function inicializarMotor(opts: OpcionesMotor = {}): Promise<{ backend: Backend }> {
+  if (!inicializacion) {
+    inicializacion = iniciarMotor(opts).catch((error) => {
+      // Un fallo (red, OOM, worker caído) no envenena la visita: se puede reintentar.
+      inicializacion = null
+      throw error
+    })
+  }
+  return inicializacion
+}
+
+async function iniciarMotor(opts: OpcionesMotor): Promise<{ backend: Backend }> {
   const usarGpu = opts.usarWebGPU === true
 
   const respuesta = await pedir(
@@ -198,19 +226,6 @@ export async function sintetizar(opts: OpcionesSintesis): Promise<ResultadoSinte
     ms: respuesta.ms,
     rtf: segundos > 0 ? respuesta.ms / 1000 / segundos : 0,
   }
-}
-
-/**
- * Cancela lo que esté corriendo matando el worker. Los pesos siguen en Cache
- * Storage, así que volver a empezar no cuesta otra descarga (sí la creación de
- * sesiones).
- */
-export function cancelar(): void {
-  if (worker) worker.terminate()
-  worker = null
-  backendActivo = null
-  for (const pendiente of pendientes.values()) pendiente.rechazar(new Error('Cancelado.'))
-  pendientes.clear()
 }
 
 export function generarWavBlob(muestras: Float32Array, sampleRate: number): Blob {

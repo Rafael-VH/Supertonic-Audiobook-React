@@ -1,10 +1,44 @@
 # Plan de port a React (web) — Supertonic-AudioBook
 
-> Auditoría del proyecto de escritorio + plan paso a paso para llevar la app a una **web app React** con inferencia TTS en el navegador (WebGPU, fallback WASM).
+> Auditoría del proyecto de escritorio + plan paso a paso para llevar la app a una **web app React** con inferencia TTS en el navegador (WASM; WebGPU quedó descartado, §5.2).
 >
-> Fecha: 2026-10-21. Revisado y corregido el 2026-10-22 con una ejecución real del motor en navegador (§11).
+> Fecha: 2026-10-21. Revisado y corregido el 2026-10-22 con una ejecución real del motor en navegador (§11). Actualizado el 2026-10-24 con el estado real de implementación (§0) y las mediciones del Web Worker (§11.9).
 >
-> Todo lo afirmado abajo está verificado contra el código de este repo, contra las APIs reales de Hugging Face / GitHub (salidas citadas en §4 y §5) y contra mediciones reales sobre `onnxruntime-web` (§11). Donde el plan original se equivocaba, la corrección está marcada con **CORREGIDO**.
+> Todo lo afirmado abajo está verificado contra el código de este repo, contra las APIs reales de Hugging Face / GitHub (salidas citadas en §4 y §5) y contra mediciones reales sobre `onnxruntime-web` (§11). Donde el plan original se equivocaba, la corrección está marcada con **CORREGIDO**. En §7, cada fase lleva su marca de avance: ✅ hecho · 🟡 parcial · ⬜ pendiente.
+
+---
+
+## 0. Estado de implementación (2026-10-24)
+
+> Esta sección es la foto actual del repo. El resto del documento sigue siendo el diseño de referencia.
+
+`main` en `2151d50`. El camino crítico funciona de punta a punta: un `.md` entra, un WAV sale, con los pesos cacheados y el motor en un Web Worker. La demo está publicada en GitHub Pages y fue verificada en escritorio y en celular.
+
+| Fase (§7) | Estado | Qué hay en el repo |
+|---|---|---|
+| 0 — Andamiaje | ✅ | Vite 8 + React 19 + TS 7 estricto, `base: './'`, `scripts/copiar-ort.mjs` en `postinstall` |
+| 1 — Motor TTS | ✅ | `src/data/motor-tts.ts` (cliente del worker) + `src/workers/tts.worker.ts` (motor); WebGPU apagado (§5.2); inicialización única por visita (§12) |
+| 2 — Descarga + caché | ✅ | `src/data/cache-modelos.ts` con `tee()` + `cache.put` por URL estable; 7 entradas cacheadas (§11.8) |
+| 3 — Dominio | 🟡 | `limpiar-markdown.ts` y `segmentar-texto.ts`; el orquestador vive en `App.tsx` |
+| 4 — UI React | 🟡 | Un `.md` con arrastrar/soltar, ajustes, tema claro/oscuro, progreso, cancelar, resultado con descarga |
+| 5 — Formatos | ⬜ | Sólo WAV, generado por `src/data/wav.ts`; no hay selector de formatos |
+| 6 — Tests | 🟡 | 39 tests de `vitest` (dominio, concatenación, ajustes, motor); sin tests de UI ni de humo en navegador |
+| 7 — Deploy | ✅ | `.github/workflows/deploy.yml` + `coi-serviceworker`, verificado contra la URL real |
+
+**Lo que falta, por valor**
+
+1. Log de síntesis y separación en paneles (Fase 4, puntos 1 y 4).
+2. Tests de UI con `@testing-library/react` y del orquestador (Fase 6).
+3. i18n ES/EN y "Acerca de" con licencias y créditos (Fase 4, punto 7).
+4. Selector de formatos con MP3/OGG/FLAC deshabilitados y "próximamente" (Fase 5).
+5. Temas neumo/skeuo.
+
+**Divergencias conscientes respecto del plan**
+
+- **Orquestación fuera del dominio.** El flujo leer → limpiar → segmentar → sintetizar → concatenar → WAV quedó en `App.tsx`, no en `domain/procesar-archivo.ts`. Si se agrega multiarchivo o cola de trabajos, es el primer candidato a extraerse.
+- **39 tests, no 28.** Se sumaron `concatenar-muestras` (2), `ajustes` (11) y `motor-una-vez` (3), que no existen en el desktop. Faltan los 10 de `procesar_archivo` y los 9 de `repositorio_archivos`: sus equivalentes web todavía no son unidades separadas.
+- **Preferencias en una sola clave.** Todo se guarda como JSON bajo `supertonic.ajustes`, normalizado campo por campo al leer (`normalizarAjustes`), en lugar del esquema de claves sueltas del desktop.
+- **ETA.** La UI muestra caracteres, segmentos y duración estimada del audio (`~N min`), no un ETA de cómputo calculado con RTF.
 
 ---
 
@@ -16,9 +50,9 @@
 | ¿Cuál es el trabajo real? | (a) descarga + caché de los pesos, (b) puerto de las reglas de Markdown/segmentación a JS, (c) UI React que replique la de escritorio, (d) deploy en GitHub Pages. |
 | ¿Se puede publicar en GitHub Pages? | **Sí, pero los pesos no van en el repo.** `vector_estimator.onnx` pesa 256 MB y GitHub bloquea archivos >100 MB. Los pesos se bajan de Hugging Face en runtime y se cachean en Cache Storage. CORS verificado, incluido `206 Partial Content` (§4.2). |
 | ¿Cuánto pesa la primera carga? | **~401 MB** (398,1 MB de ONNX + 2,9 MB de voces + 286 KB de config). Sin caché, la primera vez es una descarga larga. |
-| ¿Qué motor de inferencia? | **WebGPU** (Chrome/Edge 113+) cuando existe. Fallback **WASM multihilo** mediante `coi-serviceworker` (§5.3). |
+| ¿Qué motor de inferencia? | **WASM multihilo** con `coi-serviceworker` (§5.3). WebGPU se descartó: el EP `webgpu` de ORT 1.30 devuelve audio corrupto en GPU móvil (§5.2). |
 | ¿Qué tan rápido es en CPU? | **Medido**: RTF **1,82** (5 pasos, 4 hilos, i5-2430M de 2011) → 1,8 s de cómputo por segundo de audio. **RTF 0,87** con 2 pasos (calidad robótica). Inviable para audiolibros en hardware viejo; aceptable para documentos cortos. Referencia WebGPU del vendor: RTF ~0,02–0,1 (§11). |
-| ¿Hay forma barata de acelerarlo? | **No.** HF **no publica variantes int8/cuantizadas** (§4.3). Las únicas palancas son WebGPU o bajar pasos. |
+| ¿Hay forma barata de acelerarlo? | **No.** HF **no publica variantes int8/cuantizadas** (§4.3). Las únicas palancas serían WebGPU (hoy descartado, §5.2) o bajar pasos. |
 | ¿Formatos de salida? | WAV resuelto y suficiente. MP3/OGG/FLAC requieren encoders WASM extra → fuera del MVP (§8). |
 | ¿Escala el proyecto? | Sí: la arquitectura Clean actual (dominio puro / datos / presentación) se porta 1:1 a `src/domain`, `src/data`, `src/presentation`. Los tests de dominio se portan tal cual (28 tests). |
 
@@ -74,9 +108,9 @@ app/
 | Sample rate | `SAMPLE_RATE = 44100` | `cfgs.ae.sample_rate = 44100` ✅ | Idéntico |
 | Silencio entre chunks | `SILENCE_DURATION_SECS = 0.6` | `silenceDuration = 0.3` (default de `call`) | **Decidido: 0.6** (paridad con el desktop; se pasa como 6.º argumento de `call()`). |
 | Pasos de inferencia | `DEFAULT_TTS_STEPS = 5` (slider 5–12) | README upstream: default 8 | **Decidido: 5 por defecto.** El 8 del vendor cuesta ~60 % más de tiempo de cómputo sin mejora audible que justifique el default. Slider 5–12 se mantiene. |
-| Velocidad | `DEFAULT_SPEED = 1.1` (slider 0.7–2.0) | `speed = 1.05` (rango rec. 0.9–1.5) | Decidir (§7) |
+| Velocidad | `DEFAULT_SPEED = 1.1` (slider 0.7–2.0) | `speed = 1.05` (rango rec. 0.9–1.5) | **Decidido: 1.1**, fijado en `AJUSTES_DEFECTO` (`src/data/ajustes.ts`) |
 | Voz por defecto | `DEFAULT_VOICE = "M1"` | M1 | Igual |
-| Idiomas | `LANGUAGES_VOZ` = 31 + `"na"` (32) | `AVAILABLE_LANGS` = 32, **mismos códigos** ✅ | Copiar la tupla tal cual |
+| Idiomas | `LANGUAGES_VOZ` = 31 + `"na"` (32) | `AVAILABLE_LANGS` = 32, **mismos códigos** ✅ | ✅ Portado a `IDIOMAS` (`src/data/ajustes.ts`), mismos 32 códigos |
 | Formatos | wav/flac/ogg/mp3 (`wav`+`mp3` por defecto) | solo WAV | WAV en el MVP |
 | Margen de RAM | `MEMORY_SAFE_MARGIN_BYTES = 500 MB` | n/a | En web, el límite es la memoria de la pestaña |
 
@@ -329,7 +363,7 @@ Reglas que se mantienen del proyecto desktop (mismo nombre de las que ya existen
 
 ## 7. Paso a paso
 
-### Fase 0 — Andamiaje del repo (30 min)
+### Fase 0 — Andamiaje del repo (30 min) — ✅
 
 ```bash
 npm create vite@latest supertonic-audiobook-web -- --template react-ts
@@ -343,7 +377,7 @@ git init && git add -A && git commit -m "chore: andamiaje vite + react + onnxrun
 - `README.md` en español: qué es, requisitos (Chrome/Edge 113+ para WebGPU), cómo correr, advertencia de ~400 MB de descarga.
 - `.gitignore`: `node_modules`, `dist`, `public/ort/` (se genera en build).
 
-### Fase 1 — Motor TTS en el navegador (el corazón)
+### Fase 1 — Motor TTS en el navegador (el corazón) — ✅
 
 1. Copiar `helper.js` del vendor a `src/lib/supertonic/helper.js` **verbatim**, con el encabezado de licencia/autorización:
    ```
@@ -358,33 +392,38 @@ git init && git add -A && git commit -m "chore: andamiaje vite + react + onnxrun
    interface MotorTTS { sintetizar(texto, opts): Promise<Float32Array> }
    ```
    - `cargar()`: descarga/cachea los 4 ONNX + `tts.json` + `unicode_indexer.json`, llama `loadTextToSpeech(onnxDir, { executionProviders })`.
-   - Detección de backend:
+   - Configuración de ORT (**implementado; el plan original se equivocaba en dos puntos**):
      ```ts
-     const tieneWebGPU = !!navigator.gpu && !!(await navigator.gpu.requestAdapter());
-     if (tieneWebGPU) {
-       const ep = ['webgpu'];
-     } else {
-       // obligatorio: ruta ABSOLUTA. Con './ort/' ORT resuelve contra el módulo y da 404.
-       ort.env.wasm.wasmPaths = new URL('ort/', document.baseURI).href;
-       ort.env.wasm.numThreads = crossOriginIsolated ? Math.min(navigator.hardwareConcurrency, 4) : 1;
-       ort.env.wasm.proxy = true;   // inferencia en worker: no congela la UI
-     }
+     // En el hilo principal: `document` no existe dentro de un worker.
+     // Con './ort/' ORT la ruta se resuelve contra el módulo y falla con "no available backend found".
+     const wasmPaths = new URL('ort/', document.baseURI).href
+
+     // Dentro del worker:
+     ort.env.wasm.wasmPaths = wasmPaths
+     const hilos = ctx.crossOriginIsolated === true
+     ort.env.wasm.numThreads = hilos ? Math.min(navigator.hardwareConcurrency || 1, 4) : 1
+
+     // NO usar proxy: detacha los tensores que este `helper.js` reutiliza (§5.3).
+     // El no-bloqueo se consigue moviendo el motor a un Web Worker propio (§11.9).
+     ort.env.wasm.proxy = false
      ```
+   - **WebGPU no se detecta ni se elige**: `usarWebGPU` es `false` fijo (§5.2). La detección automática se eliminó del arranque; el cableado llega hasta el worker por si se reactiva.
    - **`coi-serviceworker`**: copiar `coi-serviceworker.min.js` a `public/`, registrarlo desde `main.tsx` antes de todo. Es lo que habilita `crossOriginIsolated` (y por tanto `SharedArrayBuffer` + multihilo) en GitHub Pages. La primera visita recarga la página una vez.
    - `sintetizar()`: `textToSpeech.call(texto, lang, style, steps, speed, silence, onStep)`.
    - `cargarEstilo(voz)`: `loadVoiceStyle([`${base}/voice_styles/${voz}.json`])` — cacheado también.
    - **URLs de HF**: siempre `resolve/main/...` (nunca la redirigida; ver §4.1). Descarga por streaming a Cache Storage, sin materializar el `ArrayBuffer` (§5.5).
 4. **Probar en local primero** con la demo del vendor como sanity check: clonar `supertonic`, `hf download` de los pesos, `npm run dev`. Si el vendor no sintetiza en tu Chrome, no vas a sintetizar en React: eso valida el entorno antes de escribir UI.
 
-### Fase 2 — Descarga + caché (integrada en Fase 1, pero es un hito propio)
+### Fase 2 — Descarga + caché (integrada en Fase 1, pero es un hito propio) — ✅
 
 - UI de "Preparando modelos" con: estado por archivo, bytes, %, botón de cancelar y de borrar caché.
 - Test manual: recargar la página → los pesos NO se vuelven a bajar (Cache Storage hit). **Ojo**: si la clave es la URL redirigida y no la estable, este test pasa hoy y falla mañana (§4.1).
 - Medir: tiempo de primera carga y tiempo de carga con caché.
 - **Baseline medido** (disco local, sin red): 12–33 s de carga de los 398 MB. Sumarle la descarga según ancho de banda: 20 Mbps ≈ 160 s, 50 Mbps ≈ 64 s, 100 Mbps ≈ 32 s.
 - **Requisito de producto**: mostrar el **backend detectado** (WebGPU / WASM n hilos) y un **ETA estimado** antes de procesar. Sin esto, el usuario cree que la app se colgó. El ETA se calcula con el RTF del backend (§11): `ETA = duración_estimada_del_audio × RTF`.
+- **Estado**: ✅ la caché se verificó en frío y en caliente (§11.8). 🟡 el backend se muestra (`wasm`), pero falta el ETA de cómputo: hoy la UI estima duración del audio, no tiempo de espera.
 
-### Fase 3 — Puerto del dominio (Markdown → segmentos)
+### Fase 3 — Puerto del dominio (Markdown → segmentos) — 🟡
 
 1. `src/domain/limpiar-markdown.ts`: portar `use_cases/limpiar_markdown.py` **función por función**, con los mismos nombres y los mismos tests.
 2. `src/domain/segmentar-texto.ts`: portar `segmentar_texto.py` con `MAX_CHARS_PER_SEGMENT = 1500`, `MERGE_THRESHOLD = 200` y `_ABREVIATURAS`.
@@ -392,7 +431,9 @@ git init && git add -A && git commit -m "chore: andamiaje vite + react + onnxrun
    - `debeDetenerse()` entre segmentos → cancela y publica lo generado.
    - Exportación **atómica**: en web = escribir el WAV completo en un Blob y recién entonces dispararlo como descarga (o escribirlo en OPFS/IDB y moverlo). Nunca publicar un WAV parcial.
    - `onProgreso(segmentosHechos, total)`.
+   - **Estado**: ⬜ no existe como archivo. El flujo está en `App.tsx`: cancelar descarta la corrida completa (no publica lo parcial), el WAV se arma en un `Blob` y el progreso se pinta por segmento y por paso.
 4. Tests con `vitest`: portar los 28 tests de `app/tests/` (17 + 5 + 10 + 9). Los de `procesar_archivo` usan un motor/exportador falsos (fakes), igual que en Python.
+   - **Estado**: 🟡 `limpiar-markdown` (18), `segmentar-texto` (5) y 16 de `data/` (`ajustes`, `concatenar-muestras`, `motor-una-vez`). Faltan los 10 de `procesar_archivo` y los 9 de `repositorio_archivos`.
 
 **Decisión de paridad clave (§7.1):** el chunker del vendor corta a 300 caracteres; el desktop corta a 1500. En web conviene usar **el chunker nativo del vendor** (300) porque ya intercala silencios y está probado con el modelo, y usar `segmentar_texto` (1500) como **pre-segmentación** solo para el saneado de Markdown y el registro de progreso. Concretamente:
 
@@ -402,7 +443,7 @@ git init && git add -A && git commit -m "chore: andamiaje vite + react + onnxrun
 
 Si se quiere control total, se puede llamar `textToSpeech.batch(textList, langList, ...)` con nuestra segmentación de 1500 y gestionar los silencios a mano (es lo que hace `call()` internamente). **Empezar con `call()` y no tocarlo.**
 
-### Fase 4 — UI React
+### Fase 4 — UI React — 🟡
 
 Orden de implementación (de menor a mayor riesgo):
 
@@ -415,21 +456,33 @@ Orden de implementación (de menor a mayor riesgo):
 7. **Ajustes**: tema claro/oscuro, estilo (Material/Neumorfismo/Skeuomorfismo — replicar con CSS: `box-shadow` dual para neumo, bordes y gradientes para skeuo), idioma ES/EN, Acerca de con los links del vendor.
 8. **Preferencias**: `localStorage` con el mismo esquema de claves del desktop (`tema`, `estilo`, `idioma`, `voz`, `pasos`, `velocidad`, `lang_voz`, `formatos`, carpetas).
 
+**Estado por punto (2026-10-24):**
+
+1. 🟡 header con marca y botón de tema; una sola columna, sin tabs ni media query.
+2. ✅ input de archivo + arrastrar/soltar, chips (caracteres, segmentos, minutos) y edición del texto limpio.
+3. 🟡 voz, idioma, pasos y velocidad; sin formatos ni botón Escuchar.
+4. ⬜ sin log; hay una línea de estado `aria-live` con el paso en curso.
+5. ✅ barra + % + segmento/paso.
+6. ⬜ el feedback va a la línea de estado.
+7. 🟡 tema claro/oscuro con `data-tema` y `useLayoutEffect` (sin parpadeo); faltan estilos, i18n y Acerca de.
+8. ✅ `localStorage` bajo `supertonic.ajustes`.
+
 **Prioridad honesta:** los temas/estilos son la parte más "bonita" y la menos diferenciada. Si el tiempo aprieta: tema claro/oscuro + Material primero; neumo/skeuo al final.
 
-### Fase 5 — Formatos de salida
+### Fase 5 — Formatos de salida — ⬜
 
-- **WAV**: `writeWavFile(wav, sampleRate)` del vendor → Blob → descarga. Resuelto.
+- **WAV**: `writeWavFile(wav, sampleRate)` del vendor → Blob → descarga. ✅ Implementado como `src/data/wav.ts` (PCM16 sobre un `Float32Array`), para no arrastrar `helper.js` al hilo principal. ⬜ no hay selector de formatos en la UI.
 - **FLAC / OGG / MP3**: requieren encoder en WASM (`@wasm-audio-decoders` no encode; hay librerías tipo `lamejs` para MP3, `flac.js`, `ogg-vorbis`). Decisión: **fuera del MVP**. En el MVP, el selector de formatos muestra solo WAV y el resto queda deshabilitado con la nota "próximamente".
 - Si se implementan: encodear **fuera del hilo de inferencia** (Web Worker) para no congelar la UI.
 
-### Fase 6 — Tests
+### Fase 6 — Tests — 🟡
 
 - `vitest` con los 28 tests del dominio portados.
 - 1 test de humo: cargar modelos → sintetizar 10 caracteres → `wav.length > 0` (solo en navegador, con `npm run test:browser` o Playwright; no en CI por los 400 MB).
 - Test de la UI con `@testing-library/react` para: selección de archivos, validación de formato, cambio de idioma.
+- **Estado**: 🟡 39 tests de `vitest` en verde (dominio, `ajustes`, `concatenar-muestras`, motor); faltan el test de humo en navegador y los de UI.
 
-### Fase 7 — Deploy
+### Fase 7 — Deploy — ✅
 
 1. `vite build` → `dist/`.
 2. `public/ort/` debe existir en `dist/` (script de build: `cp -r node_modules/onnxruntime-web/dist/* public/ort/` o equivalente Windows).
@@ -437,6 +490,7 @@ Orden de implementación (de menor a mayor riesgo):
 4. Workflow `.github/workflows/deploy.yml`: build + `actions/deploy-pages`.
 5. **Límite de GitHub Pages**: 1 GB por sitio, 100 MB por archivo. Los JSON de modelos (3,2 MB) van en el repo; los ONNX **nunca**.
 6. Checklist post-deploy: (a) el navegador pide los pesos a HF y los cachea; (b) la primera síntesis funciona; (c) recargar no re-descarga; (d) el fallback WASM se activa en un navegador sin WebGPU; (e) `crossOriginIsolated === true` gracias a `coi-serviceworker` y `numThreads > 1`; (f) no hay `404` de `ort-wasm-*.mjs` en la consola.
+7. **Estado (2026-10-24)**: ✅ desplegado y verificado contra la URL real, en escritorio y en celular (voz correcta, WAV analizado). `dist` completo pesa 28 MB: el WASM ya no se duplica (`2151d50`) y el `404` del favicon se resolvió con un data URI en `index.html`.
 
 ---
 
@@ -471,19 +525,19 @@ Orden de implementación (de menor a mayor riesgo):
 
 ## 10. Definición de terminado
 
-- [ ] Se genera audio (WAV) de un `.md` de prueba en Chrome/Edge con WebGPU, en la web app.
-- [ ] La UI replica las 3 pestañas/paneles del desktop con log, progreso, cancelar, snackbar y ajustes.
-- [ ] Idioma ES/EN con las mismas claves que `TRADUCCIONES`.
-- [ ] Los pesos se cachean: la segunda visita no descarga.
-- [ ] Los 28 tests de dominio están portados y en verde.
-- [ ] `git diff` del dominio JS vs Python es revisable línea por línea (mismo orden de funciones).
-- [ ] Deploy en GitHub Pages funcionando con `base` correcto.
-- [ ] El motor arranca en el build de producción (no sólo en `npm run dev`): `wasmPaths` absoluto, sin `404` de `ort-wasm-*.mjs` (§5.3).
-- [ ] `crossOriginIsolated === true` en Pages gracias a `coi-serviceworker`, y `numThreads > 1` confirmado en consola.
-- [ ] La UI muestra el backend detectado y un ETA antes de procesar.
-- [ ] La caché usa la URL estable como clave: recargar **al día siguiente** no vuelve a descargar.
-- [ ] RTF medido y documentado para WebGPU y para WASM en al menos 2 máquinas, con la tabla del §11 actualizada.
-- [ ] README en español con requisitos, licencias (MIT código / RAIL-M pesos) y créditos.
+- [x] Se genera audio (WAV) de un `.md` de prueba en Chrome/Edge. **Vía WASM, no WebGPU**: WebGPU quedó descartado por audio corrupto en GPU móvil (§5.2).
+- [ ] La UI replica las 3 pestañas/paneles del desktop con log, progreso, cancelar, snackbar y ajustes. → hay progreso, cancelar y ajustes; faltan pestañas, log y snackbar.
+- [ ] Idioma ES/EN con las mismas claves que `TRADUCCIONES`. → hoy sólo español.
+- [x] Los pesos se cachean: la segunda visita no descarga (§11.8).
+- [ ] Los 28 tests de dominio están portados y en verde. → 39 tests en verde, pero faltan 19 de los 28 originales (§0).
+- [x] `git diff` del dominio JS vs Python es revisable línea por línea para `limpiar-markdown` y `segmentar-texto`.
+- [x] Deploy en GitHub Pages funcionando con `base` correcto.
+- [x] El motor arranca en el build de producción (no sólo en `npm run dev`): `wasmPaths` absoluto, sin `404` de `ort-wasm-*.mjs` (§5.3).
+- [ ] `crossOriginIsolated === true` en Pages gracias a `coi-serviceworker`, y `numThreads > 1` confirmado en consola. → `coi: true` verificado tras la recarga que instala el service worker; los hilos efectivos del deploy final no se re-revisaron en consola.
+- [ ] La UI muestra el backend detectado y un ETA antes de procesar. → backend ✅, ETA de cómputo ⬜.
+- [x] La caché usa la URL estable como clave: recargar no vuelve a descargar (§11.8). No se esperó 24 h para confirmar el vencimiento de la firma.
+- [ ] RTF medido y documentado para WebGPU y para WASM en al menos 2 máquinas, con la tabla del §11 actualizada. → WASM medido en una sola máquina (§11.3); WebGPU no.
+- [ ] README en español con requisitos, licencias (MIT código / RAIL-M pesos) y créditos. → existe, pero sigue diciendo "Fase 0" y ofrece WebGPU como camino principal: está desactualizado.
 
 ---
 
@@ -533,7 +587,7 @@ RTF = segundos de cómputo por segundo de audio generado. **RTF = 1 significa ti
 | Capítulo de 30 min | ~55 min | ~26 min |
 | Audiolibro de 10 h | **~18 h** | ~8,7 h |
 
-**Referencia del vendor**: su tabla publica RTF 0,018–0,023 (5 pasos) en un **M4 Pro** — ~79× más rápido que esta medición. No es comparable (Apple Silicon 2024 + backend nativo vs. dual-core de 2011 + WASM), pero fija el techo: **con WebGPU esto es casi instantáneo; sin WebGPU, la velocidad depende enteramente del CPU del visitante.**
+**Referencia del vendor**: su tabla publica RTF 0,018–0,023 (5 pasos) en un **M4 Pro** — ~79× más rápido que esta medición. No es comparable (Apple Silicon 2024 + backend nativo vs. dual-core de 2011 + WASM), pero fija el techo: **con WebGPU esto sería casi instantáneo; con la ruta WASM actual, la velocidad depende enteramente del CPU del visitante.**
 
 **Extrapolación (NO medida)**: un CPU moderno de 6–8 núcleos con AVX2 debería quedar en RTF 0,3–0,6 en WASM, o sea 2–3× más rápido que tiempo real. Tratarlo como hipótesis hasta medirlo.
 
@@ -582,4 +636,59 @@ Qué confirma:
 
 Qué **no** confirma: los RTF de esta tabla no son comparables con §11.3. Durante estas corridas la máquina estaba saturada (21 procesos de Chrome, 2,3 GB libres de 8 GB): el propio harness de referencia se degradó de 0,87 a 1,06 y su carga de 13,8 s a 40,7 s. Sirven como orden de magnitud del camino completo, no como benchmark.
 
-Nota operativa: `public/assets` (382 MB, gitignoreado) está bloqueado por un proceso del sistema y no se pudo mover; `vite build` lo copia a `dist` (36 s de build). No afecta a Pages —nunca se commitea—, pero conviene moverlo a `assets/` cuando el lock desaparezca.
+Nota operativa (**resuelta el 2026-10-23**): `public/assets` estaba bloqueado por un proceso del sistema y no se podía mover; `vite build` copiaba los 398 MB a `dist` (36 s de build). El contenido se pasó archivo por archivo a `assets/` (383 MB, gitignoreado) y `public/assets` quedó como carpeta vacía. El `dist` de producción bajó a 28 MB.
+
+### 11.9 Motor en Web Worker: medido (2026-10-23)
+
+El motor se movió del hilo principal a `src/workers/tts.worker.ts`; `src/data/motor-tts.ts` quedó como cliente por mensajes (`init`, `voz`, `sintetizar` → `evento | ok | resultado | error`).
+
+| Métrica | Antes | Después |
+|---|---|---|
+| Peor bloqueo del hilo principal | congelado durante toda la síntesis | **77 ms** |
+| Bundle | 635 kB en un solo archivo | **228 kB** UI + **407 kB** worker |
+| Progreso | se pintaba al terminar | por segmento y por paso, en vivo |
+| Cancelar | no existía | cooperativo entre segmentos, sin destruir el motor (2026-10-24) |
+
+Detalles del protocolo que importan al mantenerlo:
+
+- `wasmPaths` se calcula en el hilo principal y viaja en `init`: dentro del worker `document` no existe.
+- `numThreads` se decide con `ctx.crossOriginIsolated` (tope 4); el worker loguea `coi`, núcleos e hilos al arrancar.
+- `usarWebGPU` sigue cableado hasta `executionProviders`, pero el cliente manda `false` (§5.2).
+- El estilo de voz vive en el worker: si cambia el ajuste de voz hay que recargarlo antes de sintetizar.
+- La inicialización es única por visita: `inicializarMotor()` reutiliza la promesa, así un doble clic no dispara dos cargas y cancelar no obliga a re-verificar el modelo. Verificado en `tests/motor-una-vez.test.ts`.
+
+### 11.10 Integridad y correcciones posteriores (2026-10-23)
+
+- **WASM duplicado**: `vite build` copiaba el WASM de ORT dos veces (27 MB); `2151d50` dejó de duplicarlo.
+- **Favicon**: data URI en `index.html`; se fue el `404` de `/favicon.ico` en consola.
+- **Enlace de descarga**: `<a class="principal descarga">` heredaba colores pero no padding ni radio, porque la base del control estaba sólo en el selector `button`. Ahora la base está en `button, .principal`.
+- **Reanudar tras un apagón**: verificar que no quedó un parche `TEMP-LOCAL` aplicado en `cache-modelos.ts`, `git status` limpio, cero bytes NUL por archivo, `tsc --noEmit`, `vitest` y build antes de seguir. Un apagón puede dejar el working tree a medias sin que git lo note.
+- **Verificar estilos** con `getComputedStyle` sobre el markup real es más rápido y definitivo que interpretar una captura.
+
+---
+
+## 12. Plan de mejoras (2026-10-24)
+
+El camino crítico ya funciona; esto es lo que sigue, ordenado por relación valor/riesgo. El orden de la tabla es el orden recomendado de ejecución.
+
+| # | Mejora | Por qué | Tamaño | Criterio de aceptación |
+|---|---|---|---|---|
+| 1 | Motor único por visita + cancelación cooperativa | Cancelar mataba el worker y obligaba a re-verificar el modelo y recrear sesiones (~11 s) | S | ✅ `inicializarMotor()` reutiliza la promesa; cancelar corta entre segmentos sin destruir el worker |
+| 2 | Precarga al elegir archivo | La descarga arranca recién al tocar "Generar"; con un `.md` cargado, la espera se solapa con los ajustes | S | elegir un `.md` dispara `prepararMotor()` y el botón refleja el estado real |
+| 3 | ETA de cómputo visible | La UI estima duración del audio, no la espera; con RTF 1,5+ parece colgada | S | `ETA = duración_estimada × RTF` visible antes y durante la corrida |
+| 4 | Log de síntesis | El desktop lo tiene y hoy todo cae en una línea de estado | M | componente con niveles, autoscroll y tope de ~20 líneas |
+| 5 | Orquestador + tests de UI | El flujo vive en `App.tsx` sin red; los 10 tests de `procesar_archivo` no tienen equivalente | M | `domain/procesar-archivo.ts` con fakes + tests de selección de archivo y cambio de idioma |
+| 6 | Selector de formatos | El plan lo promete y el desktop lo tiene | S | WAV activo; MP3/OGG/FLAC deshabilitados con "próximamente" |
+| 7 | i18n ES/EN + Acerca de | Requisito del port; faltan licencias y créditos visibles | M | mismas claves que `TRADUCCIONES`; "Acerca de" con MIT / RAIL-M |
+| 8 | Cancelar con audio parcial | El desktop exporta lo generado; hoy se descarta | S | al cancelar se ofrece el WAV de los segmentos completos |
+| 9 | Temas neumo/skeuo | Cosmético, el de menor valor | M | variables CSS por `data-estilo` sobre el tema Material |
+
+**Reglas para todas**
+
+- No cambia la ruta de datos: pesos de HF + Cache Storage, inferencia WASM.
+- Cada una entra con test o criterio verificable; sin linter, el typecheck del build es la red.
+- No se toca `helper.js` (vendor) ni los defaults de §2.3.
+
+**Nota sobre la cancelación cooperativa (#1)**: cortar entre segmentos significa que "Cancelar" puede tardar lo que tarde el segmento en curso (hasta ~3 min en hardware de 2011 con un segmento de 1500 caracteres). Es el precio de no volver a cargar el modelo. Si molesta, el siguiente paso es un segundo botón "Detener ahora" que sí descarta el motor y avisa que la próxima corrida recargará los modelos.
+
+**Explícitamente fuera de este plan**: cuantizar los ONNX (no hay variantes publicadas, riesgo de calidad), auto-hospedar los 398 MB (límites de GitHub, §4 y Fase 7) y reactivar WebGPU (audio corrupto, §5.2).
