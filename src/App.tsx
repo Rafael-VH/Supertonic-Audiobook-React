@@ -7,22 +7,20 @@
  *
  * La inferencia corre en un Web Worker, así que la pestaña no se congela y se
  * puede cancelar entre segmentos. El motor se prepara una sola vez por visita:
- * cancelar no lo descarga ni vuelve a verificar el modelo. Ajustes y tema se
+ * cancelar no lo descarga ni vuelve a verificar el modelo.
+ *
+ * La precarga arranca al elegir el archivo (no al tocar Generar) y el tiempo
+ * restante se estima con lo medido en los primeros segmentos. Ajustes y tema se
  * guardan en localStorage.
  */
 
 import { useLayoutEffect, useEffect, useRef, useState } from 'react'
 import { limpiarMarkdown } from './domain/limpiar-markdown'
 import { MAX_CHARS_PER_SEGMENT, segmentarTexto } from './domain/segmentar-texto'
-import {
-  cargarVoz,
-  estaIniciado,
-  generarWavBlob,
-  inicializarMotor,
-  sintetizar,
-  type Backend,
-} from './data/motor-tts'
+import { generarWavBlob, sintetizar, type Backend } from './data/motor-tts'
 import { concatenarMuestras } from './data/wav'
+import { estimarRestante, formatearRestante, type Avance } from './domain/eta'
+import { useMotor } from './ui/useMotor'
 import {
   IDIOMAS,
   PASOS_MAX,
@@ -72,10 +70,8 @@ export default function App() {
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
   const [ajustes, setAjustes] = useState<Ajustes>(cargarAjustes)
   const [progreso, setProgreso] = useState<Progreso | null>(null)
+  const [restante, setRestante] = useState<number | null>(null)
   const [arrastrando, setArrastrando] = useState(false)
-
-  /** Voz que tiene cargada el worker; evita recargarla en cada corrida. */
-  const vozCargada = useRef<string | null>(null)
 
   /**
    * Cancelación cooperativa: se pide y se corta antes del próximo segmento. No
@@ -111,6 +107,13 @@ export default function App() {
     setEsError(error)
   }
 
+  // La precarga y Generar comparten esta preparación: la segunda llamada espera
+  // la misma carga en vez de abrir otra.
+  const { estado: estadoMotor, preparar } = useMotor({
+    alMensaje: (mensaje) => anunciar(mensaje),
+    alBackend: setBackend,
+  })
+
   async function procesarArchivo(archivo: File) {
     if (!EXTENSIONES.test(archivo.name)) {
       anunciar(`«${archivo.name}» no es un archivo .md.`, true)
@@ -129,6 +132,12 @@ export default function App() {
     if (audioUrl) URL.revokeObjectURL(audioUrl)
     setAudioUrl(null)
     anunciar(`«${archivo.name}» listo para convertir.`)
+
+    // Precarga: los ~400 MB empiezan a bajar ahora, mientras el usuario elige
+    // voz y pasos, en vez de recién al tocar Generar.
+    void preparar(ajustes.voz).catch(() =>
+      anunciar('No se pudieron preparar los modelos; se reintenta al generar.', true),
+    )
   }
 
   async function alElegirArchivo(evento: React.ChangeEvent<HTMLInputElement>) {
@@ -150,39 +159,6 @@ export default function App() {
     if (archivo) await procesarArchivo(archivo)
   }
 
-  async function prepararMotor() {
-    if (!estaIniciado()) {
-      anunciar('Cargando modelos…')
-
-      // Sin WebGPU a propósito: en GPU móvil ORT devuelve audio corrupto.
-      // Ver el comentario de inicializarMotor() en data/motor-tts.ts.
-      const { backend: real } = await inicializarMotor({
-        alModelo: (nombre, i, total) => anunciar(`Cargando modelos ${i}/${total}: ${nombre}`),
-        alProgreso: (p) => {
-          if (p.desdeCache) {
-            anunciar(`Modelo en caché: ${p.archivo}`)
-            return
-          }
-          const porcentaje = p.total ? Math.round((p.cargado / p.total) * 100) : 0
-          anunciar(`Descargando ${p.archivo} ${porcentaje}% (${(p.cargado / MB).toFixed(1)} MB)`)
-        },
-      })
-
-      setBackend(real)
-      vozCargada.current = null
-    }
-
-    if (vozCargada.current !== ajustes.voz) {
-      anunciar(`Cargando voz ${ajustes.voz}…`)
-      await cargarVoz({
-        voz: ajustes.voz,
-        alProgreso: (p) =>
-          anunciar(p.desdeCache ? `Voz ${ajustes.voz} en caché` : `Descargando voz ${ajustes.voz}…`),
-      })
-      vozCargada.current = ajustes.voz
-    }
-  }
-
   function pedirCancelacion() {
     cancelado.current = true
     anunciar('Cancelando al terminar el segmento en curso…')
@@ -199,10 +175,13 @@ export default function App() {
     setOcupado(true)
     setDetalle('')
     setProgreso({ segmento: 1, segmentos: partes.length, paso: 0, pasos: ajustes.pasos })
+    setRestante(null)
+    const totalCaracteres = partes.reduce((suma, parte) => suma + parte.length, 0)
+    const mediciones: Avance[] = []
     const inicio = performance.now()
 
     try {
-      await prepararMotor()
+      await preparar(ajustes.voz)
 
       const muestras: Float32Array[] = []
       let sampleRate = 0
@@ -228,6 +207,25 @@ export default function App() {
         })
         muestras.push(res.muestras)
         sampleRate = res.sampleRate
+
+        // Media de los dos últimos segmentos: el número no salta con un
+        // segmento atípico y sigue reflejando este equipo, no una tabla.
+        mediciones.push({
+          caracteres: partes[i].length,
+          audioSegundos: res.segundos,
+          ms: res.ms,
+        })
+        const ultimas = mediciones.slice(-2).reduce(
+          (suma, m) => ({
+            caracteres: suma.caracteres + m.caracteres,
+            audioSegundos: suma.audioSegundos + m.audioSegundos,
+            ms: suma.ms + m.ms,
+          }),
+          { caracteres: 0, audioSegundos: 0, ms: 0 },
+        )
+        const hechos = mediciones.reduce((suma, m) => suma + m.caracteres, 0)
+        const estimado = estimarRestante(ultimas, totalCaracteres - hechos)
+        if (estimado !== null) setRestante(estimado)
       }
 
       if (cancelado.current) {
@@ -257,6 +255,7 @@ export default function App() {
     } finally {
       setOcupado(false)
       setProgreso(null)
+      setRestante(null)
     }
   }
 
@@ -414,7 +413,11 @@ export default function App() {
             Cancelar
           </button>
         )}
-        {backend && <span className="backend">{backend}</span>}
+        {(backend || estadoMotor === 'preparando') && (
+          <span className="backend">
+            {estadoMotor === 'preparando' ? 'preparando modelos…' : backend}
+          </span>
+        )}
       </section>
 
       <div className="estado-caja" aria-live="polite">
@@ -428,6 +431,13 @@ export default function App() {
           >
             <div style={{ width: `${pct}%` }} />
           </div>
+        )}
+        {progreso && (
+          <p className="restante">
+            {restante === null
+              ? 'Calculando el tiempo restante…'
+              : `Faltan ≈ ${formatearRestante(restante)}`}
+          </p>
         )}
         <p className={esError ? 'estado error' : 'estado'}>{estado}</p>
       </div>

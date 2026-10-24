@@ -445,6 +445,13 @@ button:disabled {
   font-variant-numeric: tabular-nums;
 }
 
+.restante {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--tenue);
+  font-variant-numeric: tabular-nums;
+}
+
 .estado.error {
   color: var(--aviso);
 }
