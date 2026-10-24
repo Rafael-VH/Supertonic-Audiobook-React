@@ -71,6 +71,7 @@ export default function App() {
   const [ajustes, setAjustes] = useState<Ajustes>(cargarAjustes)
   const [progreso, setProgreso] = useState<Progreso | null>(null)
   const [restante, setRestante] = useState<number | null>(null)
+  const [logSintesis, setLogSintesis] = useState<string[]>([])
   const [arrastrando, setArrastrando] = useState(false)
 
   /**
@@ -226,6 +227,14 @@ export default function App() {
         const hechos = mediciones.reduce((suma, m) => suma + m.caracteres, 0)
         const estimado = estimarRestante(ultimas, totalCaracteres - hechos)
         if (estimado !== null) setRestante(estimado)
+
+        // LOG DE SÍNTESESIS: acumulado después de este segmento
+        const totalAudioSegundos = ultimas.audioSegundos + res.segundos
+        const totalMs = ultimas.ms + res.ms
+        const rtfTotal = totalAudioSegundos > 0 ? totalMs / 1000 / totalAudioSegundos : 0
+        const tamanoEstimadoMB = totalAudioSegundos > 0 ? (totalAudioSegundos / 60) * 0.5 : 0 // approx 0.5 MB/min
+        const logEntry = `Segmento ${i + 1} de ${partes.length}: ${totalAudioSegundos.toFixed(1)} s de audio, ${totalMs.toFixed(0)} ms cómputo, RTF ${rtfTotal.toFixed(2)}, ~${tamanoEstimadoMB.toFixed(1)} MB`
+        setLogSintesis((anterior) => [...anterior, logEntry])
       }
 
       if (cancelado.current) {
@@ -437,6 +446,15 @@ export default function App() {
             {restante === null
               ? 'Calculando el tiempo restante…'
               : `Faltan ≈ ${formatearRestante(restante)}`}
+          </p>
+        )}
+        {progreso && logSintesis.length > 0 && (
+          <p className="log-sintesis">
+            {logSintesis.map((linea) => (
+              <span>
+                {linea}
+              </span>
+            ))}
           </p>
         )}
         <p className={esError ? 'estado error' : 'estado'}>{estado}</p>
