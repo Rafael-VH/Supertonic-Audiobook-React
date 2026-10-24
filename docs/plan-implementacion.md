@@ -17,7 +17,7 @@ Plan de ejecución de las funcionalidades que todavía no están implementadas, 
 |---|---|---|---|---|---|
 | **0** | Base mínima | Extensión real del archivo + arnés de tests de UI | S | — | 🟡 arnés hecho; extensión pendiente |
 | **1** | Menos espera | Precarga del motor · ETA de cómputo | M | 0 | ✅ 2026-10-24 |
-| **2** | Visibilidad | Log de síntesis | M | 0 | ⬜ |
+| **2** | Visibilidad | Log de síntesis | M | 0 | ✅ |
 | **3** | Base testeable | Orquestador en el dominio · tests de UI y del flujo | M | 2 | ⬜ |
 | **4** | Salida útil | Cancelar con audio parcial · selector de formatos | S–M | 3 | ⬜ |
 | **5** | Producto bilingüe | i18n ES/EN · Acerca de | L | 3 | ⬜ |

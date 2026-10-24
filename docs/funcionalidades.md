@@ -87,7 +87,7 @@ Ordenadas por relación valor/riesgo. Las que llevan \* no están en [plan §12]
 
 | Estado | Funcionalidad | Qué hará | Prioridad |
 |---|---|---|---|
-| ⬜ | Log de síntesis | Reemplazar la línea de estado por un registro con niveles, autoscroll y tope de líneas, como el de la app de escritorio. | Alta |
+| ✅ | Log de síntesis | Reemplazar la línea de estado por un registro con niveles, autoscroll y tope de líneas, como el de la app de escritorio. | Alta |
 | ⬜ | Orquestador en el dominio | Extraer el flujo de `App.tsx` a `domain/procesar-archivo.ts` con dobles, para poder testearlo. | Media |
 | ⬜ | Tests de UI (ampliar) | Sumar a la cobertura actual selección de archivo, cambio de idioma y cambio de voz con `@testing-library/react`. | Media |
 | ⬜ | Selector de formatos | Mostrar WAV activo y MP3/OGG/FLAC deshabilitados con *próximamente*, como promete el plan. | Media |
