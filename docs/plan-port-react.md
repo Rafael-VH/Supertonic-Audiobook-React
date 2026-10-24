@@ -17,12 +17,12 @@
 | Fase (§7) | Estado | Qué hay en el repo |
 |---|---|---|
 | 0 — Andamiaje | ✅ | Vite 8 + React 19 + TS 7 estricto, `base: './'`, `scripts/copiar-ort.mjs` en `postinstall` |
-| 1 — Motor TTS | ✅ | `src/data/motor-tts.ts` (cliente del worker) + `src/workers/tts.worker.ts` (motor); WebGPU apagado (§5.2); inicialización única por visita (§12) |
+| 1 — Motor TTS | ✅ | `src/data/motor-tts.ts` (cliente del worker) + `src/workers/tts.worker.ts` (motor); WebGPU apagado (§5.2); inicialización única por visita, precarga al elegir archivo y ETA calibrado (§12) |
 | 2 — Descarga + caché | ✅ | `src/data/cache-modelos.ts` con `tee()` + `cache.put` por URL estable; 7 entradas cacheadas (§11.8) |
 | 3 — Dominio | 🟡 | `limpiar-markdown.ts` y `segmentar-texto.ts`; el orquestador vive en `App.tsx` |
 | 4 — UI React | 🟡 | Un `.md` con arrastrar/soltar, ajustes, tema claro/oscuro, progreso, cancelar, resultado con descarga |
 | 5 — Formatos | ⬜ | Sólo WAV, generado por `src/data/wav.ts`; no hay selector de formatos |
-| 6 — Tests | 🟡 | 39 tests de `vitest` (dominio, concatenación, ajustes, motor); sin tests de UI ni de humo en navegador |
+| 6 — Tests | 🟡 | 53 tests de `vitest` (dominio, adaptadores, motor y UI de la precarga con jsdom); falta el test de humo en navegador |
 | 7 — Deploy | ✅ | `.github/workflows/deploy.yml` + `coi-serviceworker`, verificado contra la URL real |
 
 **Lo que falta, por valor**
@@ -36,9 +36,9 @@
 **Divergencias conscientes respecto del plan**
 
 - **Orquestación fuera del dominio.** El flujo leer → limpiar → segmentar → sintetizar → concatenar → WAV quedó en `App.tsx`, no en `domain/procesar-archivo.ts`. Si se agrega multiarchivo o cola de trabajos, es el primer candidato a extraerse.
-- **39 tests, no 28.** Se sumaron `concatenar-muestras` (2), `ajustes` (11) y `motor-una-vez` (3), que no existen en el desktop. Faltan los 10 de `procesar_archivo` y los 9 de `repositorio_archivos`: sus equivalentes web todavía no son unidades separadas.
+- **53 tests, no 28.** Se sumaron `concatenar-muestras` (2), `ajustes` (11), `motor-una-vez` (3), `eta` (8) y UI de precarga y voces (6, con jsdom), que no existen en el desktop. Faltan los 10 de `procesar_archivo` y los 9 de `repositorio_archivos`: sus equivalentes web todavía no son unidades separadas.
 - **Preferencias en una sola clave.** Todo se guarda como JSON bajo `supertonic.ajustes`, normalizado campo por campo al leer (`normalizarAjustes`), en lugar del esquema de claves sueltas del desktop.
-- **ETA.** La UI muestra caracteres, segmentos y duración estimada del audio (`~N min`), no un ETA de cómputo calculado con RTF.
+- **ETA.** Antes de generar la UI muestra duración estimada del audio; durante la corrida, un restante calculado con el RTF medido en los primeros segmentos (no un RTF de tabla).
 
 ---
 
@@ -420,8 +420,8 @@ git init && git add -A && git commit -m "chore: andamiaje vite + react + onnxrun
 - Test manual: recargar la página → los pesos NO se vuelven a bajar (Cache Storage hit). **Ojo**: si la clave es la URL redirigida y no la estable, este test pasa hoy y falla mañana (§4.1).
 - Medir: tiempo de primera carga y tiempo de carga con caché.
 - **Baseline medido** (disco local, sin red): 12–33 s de carga de los 398 MB. Sumarle la descarga según ancho de banda: 20 Mbps ≈ 160 s, 50 Mbps ≈ 64 s, 100 Mbps ≈ 32 s.
-- **Requisito de producto**: mostrar el **backend detectado** (WebGPU / WASM n hilos) y un **ETA estimado** antes de procesar. Sin esto, el usuario cree que la app se colgó. El ETA se calcula con el RTF del backend (§11): `ETA = duración_estimada_del_audio × RTF`.
-- **Estado**: ✅ la caché se verificó en frío y en caliente (§11.8). 🟡 el backend se muestra (`wasm`), pero falta el ETA de cómputo: hoy la UI estima duración del audio, no tiempo de espera.
+- **Requisito de producto**: mostrar el **backend detectado** (WASM n hilos) y un **ETA estimado** durante la corrida. Sin esto, el usuario cree que la app se colgó. El ETA se calibra con lo medido en los primeros segmentos (`segundos de audio por carácter × RTF`), no con una tabla fija.
+- **Estado**: ✅ la caché se verificó en frío y en caliente (§11.8); ✅ el backend se muestra (`wasm`) y la precarga arranca al elegir archivo; ✅ el ETA aparece tras el primer segmento.
 
 ### Fase 3 — Puerto del dominio (Markdown → segmentos) — 🟡
 
@@ -480,7 +480,7 @@ Orden de implementación (de menor a mayor riesgo):
 - `vitest` con los 28 tests del dominio portados.
 - 1 test de humo: cargar modelos → sintetizar 10 caracteres → `wav.length > 0` (solo en navegador, con `npm run test:browser` o Playwright; no en CI por los 400 MB).
 - Test de la UI con `@testing-library/react` para: selección de archivos, validación de formato, cambio de idioma.
-- **Estado**: 🟡 39 tests de `vitest` en verde (dominio, `ajustes`, `concatenar-muestras`, motor); faltan el test de humo en navegador y los de UI.
+- **Estado**: 🟡 53 tests de `vitest` en verde (dominio, adaptadores, motor y UI de la precarga); faltan el test de humo en navegador y ampliar la cobertura de UI.
 
 ### Fase 7 — Deploy — ✅
 
@@ -529,12 +529,12 @@ Orden de implementación (de menor a mayor riesgo):
 - [ ] La UI replica las 3 pestañas/paneles del desktop con log, progreso, cancelar, snackbar y ajustes. → hay progreso, cancelar y ajustes; faltan pestañas, log y snackbar.
 - [ ] Idioma ES/EN con las mismas claves que `TRADUCCIONES`. → hoy sólo español.
 - [x] Los pesos se cachean: la segunda visita no descarga (§11.8).
-- [ ] Los 28 tests de dominio están portados y en verde. → 39 tests en verde, pero faltan 19 de los 28 originales (§0).
+- [ ] Los 28 tests de dominio están portados y en verde. → 53 tests en verde, pero faltan 19 de los 28 originales (§0).
 - [x] `git diff` del dominio JS vs Python es revisable línea por línea para `limpiar-markdown` y `segmentar-texto`.
 - [x] Deploy en GitHub Pages funcionando con `base` correcto.
 - [x] El motor arranca en el build de producción (no sólo en `npm run dev`): `wasmPaths` absoluto, sin `404` de `ort-wasm-*.mjs` (§5.3).
 - [ ] `crossOriginIsolated === true` en Pages gracias a `coi-serviceworker`, y `numThreads > 1` confirmado en consola. → `coi: true` verificado tras la recarga que instala el service worker; los hilos efectivos del deploy final no se re-revisaron en consola.
-- [ ] La UI muestra el backend detectado y un ETA antes de procesar. → backend ✅, ETA de cómputo ⬜.
+- [x] La UI muestra el backend detectado y un ETA antes de procesar. → backend ✅; el ETA aparece al terminar el primer segmento, calibrado con el equipo.
 - [x] La caché usa la URL estable como clave: recargar no vuelve a descargar (§11.8). No se esperó 24 h para confirmar el vencimiento de la firma.
 - [ ] RTF medido y documentado para WebGPU y para WASM en al menos 2 máquinas, con la tabla del §11 actualizada. → WASM medido en una sola máquina (§11.3); WebGPU no.
 - [x] README en español con requisitos, licencias (MIT código / RAIL-M pesos) y créditos. → reescrito el 2026-10-24 para el usuario final (uso, esperas, ajustes, limitaciones); los detalles técnicos quedaron en `docs/desarrollo.md`.
@@ -674,8 +674,8 @@ El camino crítico ya funciona; esto es lo que sigue, ordenado por relación val
 | # | Mejora | Por qué | Tamaño | Criterio de aceptación |
 |---|---|---|---|---|
 | 1 | Motor único por visita + cancelación cooperativa | Cancelar mataba el worker y obligaba a re-verificar el modelo y recrear sesiones (~11 s) | S | ✅ `inicializarMotor()` reutiliza la promesa; cancelar corta entre segmentos sin destruir el worker |
-| 2 | Precarga al elegir archivo | La descarga arranca recién al tocar "Generar"; con un `.md` cargado, la espera se solapa con los ajustes | S | elegir un `.md` dispara `prepararMotor()` y el botón refleja el estado real |
-| 3 | ETA de cómputo visible | La UI estima duración del audio, no la espera; con RTF 1,5+ parece colgada | S | `ETA = duración_estimada × RTF` visible antes y durante la corrida |
+| 2 | Precarga al elegir archivo | La descarga arranca recién al tocar «Generar»; con un `.md` cargado, la espera se solapa con los ajustes | S | ✅ elegir un archivo prepara modelos y voz (`useMotor`) y *Generar* reutiliza ese trabajo |
+| 3 | ETA de cómputo visible | La UI estima duración del audio, no la espera; con RTF 1,5+ parece colgada | S | ✅ restante visible tras el primer segmento, con RTF medido y suavizado a dos segmentos |
 | 4 | Log de síntesis | El desktop lo tiene y hoy todo cae en una línea de estado | M | componente con niveles, autoscroll y tope de ~20 líneas |
 | 5 | Orquestador + tests de UI | El flujo vive en `App.tsx` sin red; los 10 tests de `procesar_archivo` no tienen equivalente | M | `domain/procesar-archivo.ts` con fakes + tests de selección de archivo y cambio de idioma |
 | 6 | Selector de formatos | El plan lo promete y el desktop lo tiene | S | WAV activo; MP3/OGG/FLAC deshabilitados con "próximamente" |
