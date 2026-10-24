@@ -2,8 +2,29 @@ node_modules
 dist
 dist-ssr
 *.local
-.DS_Store
 .vite
+
+# Registros y resultados de pruebas
+*.log
+npm-debug.log*
+coverage/
+test-results/
+playwright-report/
+
+# TypeScript incremental
+*.tsbuildinfo
+
+# Variables de entorno: Vite expone las VITE_* en el cliente.
+.env
+.env.*
+!.env.example
+
+# Basura del sistema y del editor
+.DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+*.swp
 
 # WASM de onnxruntime-web: se copia en build, no se versiona.
 public/ort/
