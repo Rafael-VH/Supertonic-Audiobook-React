@@ -32,3 +32,6 @@ public/ort/
 # Modelos pesados (descargados en runtime / build local)
 /assets/
 public/assets/
+
+# Agentes IA
+.atl/
