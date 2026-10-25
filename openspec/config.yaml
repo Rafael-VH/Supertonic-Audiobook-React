@@ -1,0 +1,55 @@
+# OpenSpec — Supertonic Audiobook React
+# Generado por sdd-init el 2026-10-22. Persistencia: hybrid (OpenSpec + Engram).
+
+project: supertonic-audiobook-react
+persistence: hybrid
+strict_tdd: true
+
+context: |
+  Port web React de Supertonic-AudioBook (desktop Python): Markdown -> audio.
+  TTS Supertonic 3 con onnxruntime-web (WebGPU, fallback WASM). 100% cliente, sin backend.
+  Deploy GitHub Pages (base './'): nada de COOP/COEP, WASM single-thread.
+  Arquitectura limpia: src/domain (puro) <- src/data <- src/App.tsx. Regla de dependencia hacia adentro.
+  src/lib/supertonic/helper.js es codigo vendoreado (MIT): no refactorizar, solo envolver.
+  Identificadores y comentarios en espanol. Commits convencionales con scope (feat(domain), feat(data)).
+  Plan vigente: docs/plan-port-react.md.
+
+stack:
+  runtime: React 19 + TypeScript 7 (strict, noUnusedLocals)
+  bundler: Vite 8 (base './')
+  tts: onnxruntime-web 1.30
+  tests: Vitest 5 (environment node, tests/**/*.test.ts)
+
+testing:
+  strict_tdd: true
+  runner: npm test
+  watch: npm run test:watch
+  typecheck: npm run build
+  unit: true
+  integration: false
+  e2e: false
+  coverage: false
+  linter: false
+  formatter: false
+
+phase_rules:
+  proposal:
+    - Declarar alcance y que regla de negocio del desktop se preserva.
+    - Marcar supuestos sobre paridad de constantes (sample rate, silencio, steps, speed).
+  spec:
+    - Toda regla portada cita su origen en docs/plan-port-react.md.
+    - Escenarios verificables sobre funciones puras de src/domain.
+  design:
+    - Respetar la regla de dependencia: domain no importa data ni React.
+    - La UI va en src/App.tsx / src/presentation; el dominio queda testeable sin DOM.
+  tasks:
+    - Un test RED por regla pedida; un test de no-regresion por comportamiento existente tocado.
+    - Presupuesto de revision: 1500 lineas cambiadas.
+  apply:
+    - Test-first obligatorio: RED -> GREEN -> REFACTOR con `npm test`.
+    - Cerrar cada tarea con `npm run build` (typecheck) y commit convencional.
+    - No editar src/lib/supertonic/helper.js salvo necesidad documentada.
+  verify:
+    - Ejecutar `npm test` y `npm run build`; reportar CRITICAL/WARNING/SUGGESTION.
+  archive:
+    - Sincronizar delta specs en openspec/specs y guardar reporte en Engram.
