@@ -2,8 +2,9 @@
 /** Logic extracted from App.tsx for testability. */
 
 import { segmentarTexto } from './segmentar-texto'
-import { sintetizar, generarWavBlob } from '../data/motor-tts'
+import { concatenarMuestras, muestrasAWav } from '../data/wav'
 import { type Ajustes } from '../data/ajustes'
+import { type Avance, estimarRestante } from './eta'
 
 export type Progreso = {
   segmento: number
@@ -21,89 +22,146 @@ export type Resultado = {
   nombreBase: string
 }
 
+export type SintetizarResultado = {
+  muestras: Float32Array
+  sampleRate: number
+  segundos: number
+  ms: number
+}
+
+export interface MotorSintetizador {
+  sintetizar(opts: {
+    texto: string
+    lang: string
+    pasos: number
+    velocidad: number
+    alPaso?: (hecho: number) => void
+  }): Promise<SintetizarResultado>
+  preparar?(voz: string): Promise<void>
+}
+
 export interface OpcionesGenerar {
   texto: string
   ajustes: Ajustes
   nombreBase: string
-  alMensaje: (mensaje: string) => void
-  setProgreso: (progreso: Progreso | null) => void
-  onResultado?: (resultado: Resultado) => void
-  onCancelado?: () => void
+  motor: MotorSintetizador
+  debeCancelar: () => boolean
+  alMensaje: (mensaje: string, error?: boolean) => void
+  alProgreso: (progreso: Progreso) => void
+  alLimpiarProgreso: () => void
+  alRestante: (restante: number | null) => void
+  alLog: (linea: string) => void
+  alInicio?: () => void
+  alResultado: (resultado: Resultado) => void
+  alCancelado?: (mensaje: string) => void
+  alError?: (mensaje: string) => void
 }
 
 export async function generar({
   texto,
   ajustes,
   nombreBase,
+  motor,
+  debeCancelar,
   alMensaje,
-  setProgreso,
-  onResultado,
-  onCancelado,
+  alProgreso,
+  alLimpiarProgreso,
+  alRestante,
+  alLog,
+  alInicio,
+  alResultado,
+  alCancelado,
+  alError,
 }: OpcionesGenerar): Promise<void> {
   const partes = texto ? segmentarTexto(texto) : []
   if (partes.length === 0) {
     alMensaje('No hay texto para sintetizar.', true)
-    setProgreso(null)
+    alLimpiarProgreso()
     return
   }
 
-  let cancelado = false
-
-  setProgreso({ segmento: 1, segmentos: partes.length, paso: 0, pasos: ajustes.pasos })
+  alInicio?.()
+  alProgreso({ segmento: 1, segmentos: partes.length, paso: 0, pasos: ajustes.pasos })
+  alRestante(null)
   alMensaje('Preparando motor…')
 
+  const totalCaracteres = partes.reduce((suma, parte) => suma + parte.length, 0)
+  const mediciones: Avance[] = []
+
   try {
-    let totalSegundos = 0
-    let totalMs = 0
+    if (motor.preparar) {
+      await motor.preparar(ajustes.voz)
+    }
 
-    // Procesar un solo segment para permitir estimaciones incrementales en los tests.
-    // El loop procesa el primer segmento y luego llama a onResultado, permitiendo
-    // que el test resuelva el mock del primer segmento y espere el resultado.
-    for (let i = 0; i < 1 && i < partes.length; i++) {
-      if (cancelado) break
+    const muestras: Float32Array[] = []
+    let sampleRate = 0
 
-      const res = await sintetizar({
+    for (let i = 0; i < partes.length; i++) {
+      if (debeCancelar()) break
+      alProgreso({ segmento: i + 1, segmentos: partes.length, paso: 0, pasos: ajustes.pasos })
+      alMensaje(`Sintetizando segmento ${i + 1} de ${partes.length}…`)
+      const res = await motor.sintetizar({
         texto: partes[i],
         lang: ajustes.lang,
         pasos: ajustes.pasos,
         velocidad: ajustes.velocidad,
+        alPaso: (hecho) => {
+          alProgreso({
+            segmento: i + 1,
+            segmentos: partes.length,
+            paso: hecho,
+            pasos: ajustes.pasos,
+          })
+          alMensaje(`Segmento ${i + 1} de ${partes.length} — paso ${hecho}/${ajustes.pasos}`)
+        },
       })
+      muestras.push(res.muestras)
+      sampleRate = res.sampleRate
 
-      totalSegundos += res.segundos
-      totalMs += res.ms
-
-      // Llamar a onResultado después del primer segmento
-      const segundosParcial = totalSegundos / (i + 1)
-      const msParcial = totalMs
-      onResultado?.({
-        segundos: segundosParcial,
-        ms: msParcial,
-        rtf: msParcial / 1000 / segundosParcial,
-        tamanoMB: undefined,
-        blob: undefined,
-        nombreBase,
+      mediciones.push({
+        caracteres: partes[i].length,
+        audioSegundos: res.segundos,
+        ms: res.ms,
       })
+      const ultimas = mediciones.slice(-2).reduce(
+        (suma, m) => ({
+          caracteres: suma.caracteres + m.caracteres,
+          audioSegundos: suma.audioSegundos + m.audioSegundos,
+          ms: suma.ms + m.ms,
+        }),
+        { caracteres: 0, audioSegundos: 0, ms: 0 },
+      )
+      const hechos = mediciones.reduce((suma, m) => suma + m.caracteres, 0)
+      const estimado = estimarRestante(ultimas, totalCaracteres - hechos)
+      if (estimado !== null) alRestante(estimado)
 
-      // Después de procesar el primer segmento, regresamos para permitir
-      // que el test maneje el resultado antes de procesar más segments.
-      // Los segments adicionales se procesarían en llamadas posteriores a generar.
+      const totalAudioSegundos = mediciones.reduce((s, m) => s + m.audioSegundos, 0)
+      const totalMs = mediciones.reduce((s, m) => s + m.ms, 0)
+      const rtfTotal = totalAudioSegundos > 0 ? totalMs / 1000 / totalAudioSegundos : 0
+      const tamanoEstimadoMB = totalAudioSegundos > 0 ? (totalAudioSegundos / 60) * 0.5 : 0
+      alLog(
+        `Segmento ${i + 1} de ${partes.length}: ${totalAudioSegundos.toFixed(1)} s de audio, ${totalMs.toFixed(0)} ms cómputo, RTF ${rtfTotal.toFixed(2)}, ~${tamanoEstimadoMB.toFixed(1)} MB`,
+      )
+    }
+
+    if (debeCancelar()) {
+      const mensaje =
+        muestras.length === 0
+          ? 'Cancelado. No se generó audio.'
+          : `Cancelado tras ${muestras.length} de ${partes.length} segmentos. El modelo sigue cargado.`
+      alMensaje(mensaje)
+      alCancelado?.(mensaje)
+      alLimpiarProgreso()
       return
     }
 
-    if (cancelado) {
-      alMensaje('Cancelado.')
-      onCancelado?.()
-      setProgreso(null)
-      return
-    }
+    const audio = concatenarMuestras(muestras)
+    const buffer = muestrasAWav(audio, sampleRate)
+    const blob = new Blob([buffer], { type: 'audio/wav' })
+    const segundos = audio.length / sampleRate
+    const ms = mediciones.reduce((suma, m) => suma + m.ms, 0)
 
-    // Si llegamos aquí, procesamos todos los segments restante.
-    // Esto solo se alcanza si el test configura todos los mocks de synthetizer.
-    const blob = generarWavBlob(new Float32Array(totalMs / 1000 * 44100), 44100)
-    const segundos = totalSegundos / partes.length
-    const ms = totalMs
-
-    onResultado?.({
+    alResultado({
       segundos,
       ms,
       rtf: ms / 1000 / segundos,
@@ -112,11 +170,17 @@ export async function generar({
       nombreBase,
     })
     alMensaje('Listo.')
-    setProgreso({ segmento: partes.length, segmentos: partes.length, paso: ajustes.pasos, pasos: ajustes.pasos })
+    alProgreso({ segmento: partes.length, segmentos: partes.length, paso: ajustes.pasos, pasos: ajustes.pasos })
   } catch (error) {
     const mensaje = error instanceof Error ? error.message : String(error)
-    alMensaje(mensaje === 'Cancelado.' ? 'Cancelado.' : `Error: ${mensaje}`)
+    if (mensaje === 'Cancelado.') {
+      alMensaje('Cancelado.')
+      alCancelado?.('Cancelado.')
+    } else {
+      alMensaje(`Error: ${mensaje}`, true)
+      alError?.(mensaje)
+    }
   } finally {
-    setProgreso(null)
+    alLimpiarProgreso()
   }
 }

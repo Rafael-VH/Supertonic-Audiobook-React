@@ -17,9 +17,8 @@
 import { useLayoutEffect, useEffect, useRef, useState } from 'react'
 import { limpiarMarkdown } from './domain/limpiar-markdown'
 import { MAX_CHARS_PER_SEGMENT, segmentarTexto } from './domain/segmentar-texto'
-import { generarWavBlob, sintetizar, type Backend } from './data/motor-tts'
-import { concatenarMuestras } from './data/wav'
-import { estimarRestante, formatearRestante, type Avance } from './domain/eta'
+import { sintetizar, type Backend } from './data/motor-tts'
+import { formatearRestante } from './domain/eta'
 import { useMotor } from './ui/useMotor'
 import {
   IDIOMAS,
@@ -32,8 +31,8 @@ import {
   guardarAjustes,
   type Ajustes,
 } from './data/ajustes'
+import { generar as generarOrquestador } from './domain/procesar-archivo'
 
-const MB = 1024 * 1024
 /** ~900 caracteres por minuto de audio en español. Sólo para estimar. */
 const CHARS_POR_MINUTO = 900
 /** Por encima de esto avisamos: son decenas de minutos de cómputo. */
@@ -166,106 +165,59 @@ export default function App() {
   }
 
   async function generar() {
-    const partes = segmentarTexto(texto)
-    if (partes.length === 0) {
-      anunciar('No hay texto para sintetizar.', true)
-      return
-    }
-
     cancelado.current = false
     setOcupado(true)
     setDetalle('')
-    setProgreso({ segmento: 1, segmentos: partes.length, paso: 0, pasos: ajustes.pasos })
-    setRestante(null)
-    const totalCaracteres = partes.reduce((suma, parte) => suma + parte.length, 0)
-    const mediciones: Avance[] = []
-    const inicio = performance.now()
-
-    try {
-      await preparar(ajustes.voz)
-
-      const muestras: Float32Array[] = []
-      let sampleRate = 0
-
-      for (let i = 0; i < partes.length; i++) {
-        if (cancelado.current) break
-        setProgreso({ segmento: i + 1, segmentos: partes.length, paso: 0, pasos: ajustes.pasos })
-        anunciar(`Sintetizando segmento ${i + 1} de ${partes.length}…`)
-        const res = await sintetizar({
-          texto: partes[i],
-          lang: ajustes.lang,
-          pasos: ajustes.pasos,
-          velocidad: ajustes.velocidad,
-          alPaso: (hecho) => {
-            setProgreso({
-              segmento: i + 1,
-              segmentos: partes.length,
-              paso: hecho,
-              pasos: ajustes.pasos,
-            })
-            anunciar(`Segmento ${i + 1} de ${partes.length} · paso ${hecho}/${ajustes.pasos}`)
-          },
-        })
-        muestras.push(res.muestras)
-        sampleRate = res.sampleRate
-
-        // Media de los dos últimos segmentos: el número no salta con un
-        // segmento atípico y sigue reflejando este equipo, no una tabla.
-        mediciones.push({
-          caracteres: partes[i].length,
-          audioSegundos: res.segundos,
-          ms: res.ms,
-        })
-        const ultimas = mediciones.slice(-2).reduce(
-          (suma, m) => ({
-            caracteres: suma.caracteres + m.caracteres,
-            audioSegundos: suma.audioSegundos + m.audioSegundos,
-            ms: suma.ms + m.ms,
-          }),
-          { caracteres: 0, audioSegundos: 0, ms: 0 },
-        )
-        const hechos = mediciones.reduce((suma, m) => suma + m.caracteres, 0)
-        const estimado = estimarRestante(ultimas, totalCaracteres - hechos)
-        if (estimado !== null) setRestante(estimado)
-
-        // LOG DE SÍNTESESIS: acumulado después de este segmento
-        const totalAudioSegundos = ultimas.audioSegundos + res.segundos
-        const totalMs = ultimas.ms + res.ms
-        const rtfTotal = totalAudioSegundos > 0 ? totalMs / 1000 / totalAudioSegundos : 0
-        const tamanoEstimadoMB = totalAudioSegundos > 0 ? (totalAudioSegundos / 60) * 0.5 : 0 // approx 0.5 MB/min
-        const logEntry = `Segmento ${i + 1} de ${partes.length}: ${totalAudioSegundos.toFixed(1)} s de audio, ${totalMs.toFixed(0)} ms cómputo, RTF ${rtfTotal.toFixed(2)}, ~${tamanoEstimadoMB.toFixed(1)} MB`
-        setLogSintesis((anterior) => [...anterior, logEntry])
-      }
-
-      if (cancelado.current) {
-        anunciar(
-          muestras.length === 0
-            ? 'Cancelado. No se generó audio.'
-            : `Cancelado tras ${muestras.length} de ${partes.length} segmentos. El modelo sigue cargado.`,
-        )
-        return
-      }
-
-      const audio = concatenarMuestras(muestras)
-      const blob = generarWavBlob(audio, sampleRate)
-      const segundos = audio.length / sampleRate
-      const ms = performance.now() - inicio
-
-      if (audioUrl) URL.revokeObjectURL(audioUrl)
-      setAudioUrl(URL.createObjectURL(blob))
-      setDetalle(
-        `${segundos.toFixed(1)} s de audio en ${(ms / 1000).toFixed(1)} s` +
-          ` · RTF ${(ms / 1000 / segundos).toFixed(2)} · ${(blob.size / MB).toFixed(1)} MB`,
-      )
-      anunciar('Listo.')
-    } catch (error) {
-      const mensaje = error instanceof Error ? error.message : String(error)
-      anunciar(mensaje === 'Cancelado.' ? 'Cancelado.' : `Error: ${mensaje}`, mensaje !== 'Cancelado.')
-    } finally {
-      setOcupado(false)
-      setProgreso(null)
-      setRestante(null)
+    if (audioUrl) {
+      URL.revokeObjectURL(audioUrl)
+      setAudioUrl(null)
     }
+    setLogSintesis([])
+
+    await generarOrquestador({
+      texto,
+      ajustes,
+      nombreBase,
+      motor: {
+        sintetizar: (opts) =>
+          sintetizar({
+            texto: opts.texto,
+            lang: opts.lang,
+            pasos: opts.pasos,
+            velocidad: opts.velocidad,
+            alPaso: opts.alPaso,
+          }),
+        preparar: async (voz) => {
+          await preparar(voz)
+        },
+      },
+      debeCancelar: () => cancelado.current,
+      alMensaje: (mensaje, error) => anunciar(mensaje, Boolean(error)),
+      alProgreso: (progreso) => setProgreso(progreso),
+      alLimpiarProgreso: () => {
+        setProgreso(null)
+        setRestante(null)
+      },
+      alRestante: (restante) => setRestante(restante),
+      alLog: (linea) => setLogSintesis((anterior) => [...anterior, linea]),
+      alInicio: () => setLogSintesis([]),
+      alResultado: (resultado) => {
+        if (audioUrl) URL.revokeObjectURL(audioUrl)
+        setAudioUrl(URL.createObjectURL(resultado.blob))
+        setDetalle(
+          `${resultado.segundos.toFixed(1)} s de audio en ${(resultado.ms / 1000).toFixed(1)} s` +
+            ` · RTF ${resultado.rtf.toFixed(2)} · ${resultado.tamanoMB.toFixed(1)} MB`,
+        )
+      },
+      alCancelado: (mensaje) => {
+        anunciar(mensaje)
+      },
+      alError: (mensaje) => {
+        anunciar(`Error: ${mensaje}`, true)
+      },
+    })
+
+    setOcupado(false)
   }
 
   return (
