@@ -38,6 +38,7 @@ Registro de todo lo que hace hoy la app y de lo que está planificado. Cada fila
 | ✅ | Persistir ajustes | Guarda voz, idioma, pasos, velocidad y tema como JSON en `localStorage` (`supertonic.ajustes`), normalizando cada campo al leer. | `data/ajustes.ts` |
 | ✅ | Panel contextual | La tarjeta de ajustes no se muestra hasta que hay un archivo cargado; entonces aparece al lado del texto. | `App.tsx` |
 | ✅ | Disposición adaptable | Con archivo, texto y ajustes van en dos columnas (por encima de 820 px de ancho) y se apilan en pantallas angostas. | `index.css` (`.paneles.dos-columnas`) |
+| ✅ | Selector de formatos | Muestra WAV disponible y MP3/OGG/FLAC deshabilitados con "próximamente". La salida sigue siendo WAV. | `App.tsx`, `domain/formato.ts` |
 | ✅ | Tema claro/oscuro | Alterna con un botón, respeta `prefers-color-scheme` si no hay preferencia guardada y se aplica antes del primer pintado. | `App.tsx`, `data/ajustes.ts`, `index.css` |
 
 ## Generación y salida
@@ -47,10 +48,10 @@ Registro de todo lo que hace hoy la app y de lo que está planificado. Cada fila
 | ✅ | Generar audio | Valida que haya texto, segmenta, prepara el motor y sintetiza segmento por segmento. | `App.tsx` (`generar`) |
 | ✅ | Progreso | Barra con porcentaje que combina segmento actual y paso de denoising, con `role="progressbar"`. | `App.tsx`, `index.css` |
 | ✅ | Estado en vivo | Línea `aria-live` con el paso, la descarga, la cancelación, el error o el resultado. | `App.tsx` |
-| ✅ | Cancelar | Corta antes del siguiente segmento sin destruir el motor e informa cuántos segmentos se completaron. | `App.tsx` (`pedirCancelacion`) |
+| ✅ | Cancelar | Corta antes del siguiente segmento sin destruir el motor; si hay al menos un segmento completado genera un WAV parcial y lo muestra como "Audio parcial (N de M segmentos)". | `App.tsx` (`pedirCancelacion`), `domain/procesar-archivo.ts` |
 | ✅ | Reproductor | Al terminar aparece un `<audio controls>` con el WAV generado (Blob). | `App.tsx` |
 | ✅ | Descarga del WAV | Descarga un archivo `<nombre>.wav` con el nombre del original. | `App.tsx` |
-| ✅ | Detalle del resultado | Muestra duración del audio, tiempo total, RTF y tamaño del WAV. | `App.tsx` |
+| ✅ | Detalle del resultado | Muestra duración del audio, tiempo total, RTF y tamaño del WAV; indica audio parcial cuando corresponde. | `App.tsx` |
 | ✅ | Backend visible | Chip con el backend activo (`wasm`), útil para diagnosticar rendimiento. | `App.tsx` |
 | ✅ | WAV PCM16 | Concatena los segmentos y codifica mono a 44,1 kHz, 16 bits, en el hilo principal. | `data/wav.ts` |
 
@@ -90,10 +91,10 @@ Ordenadas por relación valor/riesgo. Las que llevan \* no están en [plan §12]
 | ✅ | Log de síntesis | Reemplazar la línea de estado por un registro con niveles, autoscroll y tope de líneas, como el de la app de escritorio. | Alta |
 | ✅ | Orquestador en el dominio | Extraer el flujo de `App.tsx` a `domain/procesar-archivo.ts` con dobles, para poder testearlo. | Media |
 | ⬜ | Tests de UI (ampliar) | Sumar a la cobertura actual selección de archivo, cambio de idioma y cambio de voz con `@testing-library/react`. | Media |
-| ⬜ | Selector de formatos | Mostrar WAV activo y MP3/OGG/FLAC deshabilitados con *próximamente*, como promete el plan. | Media |
+| ✅ | Selector de formatos | Mostrar WAV activo y MP3/OGG/FLAC deshabilitados con *próximamente*. | Media |
 | ⬜ | i18n ES/EN | Interfaz bilingüe con las mismas claves que la app de escritorio. | Media |
 | ⬜ | Acerca de | Versión, créditos y licencias (MIT del código, OpenRAIL-M de los pesos) accesibles desde la UI. | Media |
-| ⬜ | Cancelar con audio parcial | Ofrecer el WAV de los segmentos ya completados al cancelar, como hace el desktop. | Media |
+| ✅ | Cancelar con audio parcial | Ofrecer el WAV de los segmentos ya completados al cancelar. | Media |
 | ⬜ | Muestra de voz\* | Botón *Escuchar* que sintetiza y reproduce una frase corta con la voz y el idioma elegidos. | Media |
 | ⬜ | Panel de modelos\* | Ver qué archivos están en caché, cuánto ocupan y borrarlos desde la UI (`listarCache()` y `borrarCache()` ya existen). | Baja |
 | ⬜ | Temas neumo/skeuo | Variantes visuales sobre el tema Material actual mediante variables CSS por `data-estilo`. | Baja |

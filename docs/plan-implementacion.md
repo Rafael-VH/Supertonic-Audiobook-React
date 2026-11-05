@@ -19,7 +19,7 @@ Plan de ejecución de las funcionalidades que todavía no están implementadas, 
 | **1** | Menos espera | Precarga del motor · ETA de cómputo | M | 0 | ✅ 2026-10-24 |
 | **2** | Visibilidad | Log de síntesis | M | 0 | ✅ |
 | **3** | Base testeable | Orquestador en el dominio · tests de UI y del flujo | M | 2 | ✅ 2026-10-28 |
-| **4** | Salida útil | Cancelar con audio parcial · selector de formatos | S–M | 3 | ⬜ |
+| **4** | Salida útil | Cancelar con audio parcial · selector de formatos | S–M | 3 | ✅ 2026-10-29 |
 | **5** | Producto bilingüe | i18n ES/EN · Acerca de | L | 3 | ⬜ |
 | **6** | Paridad con el desktop | Muestra de voz · panel de modelos · paneles separados | M | 1, 2, 5 | ⬜ |
 | **7** | Estética | Temas neumo y skeuo | M | 5 | ⬜ |

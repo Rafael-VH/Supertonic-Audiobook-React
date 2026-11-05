@@ -20,6 +20,9 @@ export type Resultado = {
   tamanoMB: number
   blob: Blob
   nombreBase: string
+  parcial?: boolean
+  segmentosCompletados?: number
+  segmentosTotales?: number
 }
 
 export type SintetizarResultado = {
@@ -145,11 +148,35 @@ export async function generar({
     }
 
     if (debeCancelar()) {
-      const mensaje =
-        muestras.length === 0
-          ? 'Cancelado. No se generó audio.'
-          : `Cancelado tras ${muestras.length} de ${partes.length} segmentos. El modelo sigue cargado.`
+      if (muestras.length === 0) {
+        const mensaje = 'Cancelado. No se generó audio.'
+        alMensaje(mensaje)
+        alCancelado?.(mensaje)
+        alLimpiarProgreso()
+        return
+      }
+      const mensaje = `Cancelado tras ${muestras.length} de ${partes.length} segmentos. Audio parcial generado.`
       alMensaje(mensaje)
+      try {
+        const audio = concatenarMuestras(muestras)
+        const buffer = muestrasAWav(audio, sampleRate)
+        const blob = new Blob([buffer], { type: 'audio/wav' })
+        const segundos = audio.length / sampleRate
+        const ms = mediciones.reduce((suma, m) => suma + m.ms, 0)
+        alResultado({
+          segundos,
+          ms,
+          rtf: ms / 1000 / segundos,
+          tamanoMB: blob.size / (1024 * 1024),
+          blob,
+          nombreBase,
+          parcial: true,
+          segmentosCompletados: muestras.length,
+          segmentosTotales: partes.length,
+        })
+      } catch (e) {
+        // Si falla la concatenación, avisamos sin romper el flujo
+      }
       alCancelado?.(mensaje)
       alLimpiarProgreso()
       return

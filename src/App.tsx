@@ -32,6 +32,7 @@ import {
   type Ajustes,
 } from './data/ajustes'
 import { generar as generarOrquestador } from './domain/procesar-archivo'
+import { FORMATOS } from './domain/formato'
 
 /** ~900 caracteres por minuto de audio en español. Sólo para estimar. */
 const CHARS_POR_MINUTO = 900
@@ -204,9 +205,13 @@ export default function App() {
       alResultado: (resultado) => {
         if (audioUrl) URL.revokeObjectURL(audioUrl)
         setAudioUrl(URL.createObjectURL(resultado.blob))
-        setDetalle(
+        const detalleBase =
           `${resultado.segundos.toFixed(1)} s de audio en ${(resultado.ms / 1000).toFixed(1)} s` +
-            ` · RTF ${resultado.rtf.toFixed(2)} · ${resultado.tamanoMB.toFixed(1)} MB`,
+          ` · RTF ${resultado.rtf.toFixed(2)} · ${resultado.tamanoMB.toFixed(1)} MB`
+        setDetalle(
+          resultado.parcial && resultado.segmentosCompletados && resultado.segmentosTotales
+            ? `Audio parcial (${resultado.segmentosCompletados} de ${resultado.segmentosTotales} segmentos) · ${detalleBase}`
+            : detalleBase,
         )
       },
       alCancelado: (mensaje) => {
@@ -356,10 +361,21 @@ export default function App() {
                 />
                 <span className="valor">{ajustes.velocidad.toFixed(2)}×</span>
               </div>
+
+              <label htmlFor="formato">Formato</label>
+              <select id="formato" defaultValue="wav" disabled={ocupado}>
+                {FORMATOS.map((formato) => (
+                  <option key={formato.id} value={formato.id} disabled={!formato.disponible}>
+                    {formato.nombre}
+                    {formato.etiqueta ? ` (${formato.etiqueta})` : ''}
+                  </option>
+                ))}
+              </select>
             </div>
             <p className="nota">
               Más pasos dan mejor calidad a cambio de más tiempo. El texto se corta en fragmentos de
-              hasta {MAX_CHARS_PER_SEGMENT} caracteres.
+              hasta {MAX_CHARS_PER_SEGMENT} caracteres. MP3, OGG y FLAC requieren un codificador
+              extra; hoy se entrega WAV.
             </p>
           </section>
         )}

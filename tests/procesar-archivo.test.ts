@@ -72,7 +72,7 @@ describe('procesar-archivo.orquestador', () => {
     expect(alMensaje).toHaveBeenCalledWith('Cancelado. No se generó audio.')
   })
 
-  it('cancela entre segmentos e informa cuántos se completaron sin generar audio', async () => {
+  it('cancela entre segmentos y devuelve el audio parcial', async () => {
     let contador = 0
     const sintetizar = vi.fn().mockImplementation(async () => {
       contador++
@@ -91,8 +91,13 @@ describe('procesar-archivo.orquestador', () => {
     )
 
     expect(sintetizar).toHaveBeenCalledTimes(1)
-    expect(alResultado).not.toHaveBeenCalled()
-    expect(alCancelado).toHaveBeenCalledWith(expect.stringContaining('Cancelado tras 1 de 2 segmentos'))
+    expect(alResultado).toHaveBeenCalledTimes(1)
+    const resultado = alResultado.mock.calls[0][0]
+    expect(resultado.parcial).toBe(true)
+    expect(resultado.segmentosCompletados).toBe(1)
+    expect(resultado.segmentosTotales).toBe(2)
+    expect(resultado.blob).toBeInstanceOf(Blob)
+    expect(alCancelado).toHaveBeenCalledWith(expect.stringContaining('Audio parcial'))
   })
 
   it('reporta el error del motor y no genera resultado', async () => {

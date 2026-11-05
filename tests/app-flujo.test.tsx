@@ -6,7 +6,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import App from '../src/App'
 
 const motor = vi.hoisted(() => ({
@@ -67,5 +67,44 @@ describe('flujo de UI', () => {
     await waitFor(() => {
       expect(JSON.parse(localStorage.getItem('supertonic.ajustes')!).voz).toBe('F3')
     })
+  })
+
+  it('cancelar a mitad ofrece el audio parcial de los segmentos completados', async () => {
+    const resolver: Array<(valor: unknown) => void> = []
+    motor.sintetizar.mockImplementation(
+      () => new Promise((resolve) => resolver.push(resolve as (valor: unknown) => void)),
+    )
+
+    const parrafo = 'a'.repeat(800)
+    render(<App />)
+    cargarArchivo('largo.md', `${parrafo}\n\n${parrafo}`)
+    await screen.findByText('Ajustes')
+    fireEvent.click(screen.getByRole('button', { name: /generar audio/i }))
+
+    fireEvent.click(await screen.findByRole('button', { name: /cancelar/i }))
+
+    await act(async () => {
+      resolver[0]?.({
+        muestras: new Float32Array(4_410),
+        sampleRate: 44_100,
+        segundos: 0.1,
+        ms: 100,
+        rtf: 1,
+      })
+    })
+
+    expect(await screen.findByText(/audio parcial \(1 de 2 segmentos\)/i)).toBeTruthy()
+    expect(screen.getByRole('link', { name: /descargar largo\.wav/i })).toBeTruthy()
+  })
+
+  it('muestra los formatos sin codificador como deshabilitados', async () => {
+    render(<App />)
+    cargarArchivo()
+    await screen.findByText('Ajustes')
+
+    const mp3 = screen.getByRole('option', { name: /mp3/i }) as HTMLOptionElement
+    expect(mp3.disabled).toBe(true)
+    expect((screen.getByLabelText('Formato') as HTMLSelectElement).value).toBe('wav')
+    expect(screen.getByText(/requieren un codificador extra/i)).toBeTruthy()
   })
 })
