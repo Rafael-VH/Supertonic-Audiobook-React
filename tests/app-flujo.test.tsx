@@ -97,6 +97,25 @@ describe('flujo de UI', () => {
     expect(screen.getByRole('link', { name: /descargar largo\.wav/i })).toBeTruthy()
   })
 
+  it('el chip muestra la extensión real del archivo y la descarga sigue en .wav', async () => {
+    motor.sintetizar.mockResolvedValue({
+      muestras: new Float32Array(4_410),
+      sampleRate: 44_100,
+      segundos: 0.1,
+      ms: 100,
+      rtf: 1,
+    })
+
+    render(<App />)
+    cargarArchivo('notas.txt', 'Texto de prueba.')
+
+    expect(await screen.findByText('notas.txt', { selector: '.chip' })).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: /generar audio/i }))
+
+    expect(await screen.findByRole('link', { name: /descargar notas\.wav/i })).toBeTruthy()
+  })
+
   it('muestra los formatos sin codificador como deshabilitados', async () => {
     render(<App />)
     cargarArchivo()

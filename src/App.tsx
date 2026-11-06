@@ -32,6 +32,7 @@ import {
   type Ajustes,
 } from './data/ajustes'
 import { generar as generarOrquestador } from './domain/procesar-archivo'
+import { separarNombre } from './domain/nombre-archivo'
 import { FORMATOS } from './domain/formato'
 
 /** ~900 caracteres por minuto de audio en español. Sólo para estimar. */
@@ -62,6 +63,7 @@ function IconoLuna() {
 export default function App() {
   const [texto, setTexto] = useState('')
   const [nombreBase, setNombreBase] = useState('audio')
+  const [extension, setExtension] = useState('')
   const [estado, setEstado] = useState('Todavía no elegiste ningún archivo.')
   const [esError, setEsError] = useState(false)
   const [ocupado, setOcupado] = useState(false)
@@ -127,7 +129,9 @@ export default function App() {
       return
     }
 
-    setNombreBase(archivo.name.replace(EXTENSIONES, ''))
+    const { base, extension: ext } = separarNombre(archivo.name)
+    setNombreBase(base)
+    setExtension(ext)
     setTexto(limpio)
     setDetalle('')
     if (audioUrl) URL.revokeObjectURL(audioUrl)
@@ -276,7 +280,10 @@ export default function App() {
           {texto && (
             <>
               <div className="meta">
-                <span className="chip fuerte">{nombreBase}.md</span>
+                <span className="chip fuerte">
+                  {nombreBase}
+                  {extension ? `.${extension}` : ''}
+                </span>
                 <span className="chip">{texto.length.toLocaleString('es')} caracteres</span>
                 <span className="chip">
                   {segmentos.length} {segmentos.length === 1 ? 'segmento' : 'segmentos'}

@@ -2,7 +2,7 @@
 
 Plan de ejecución de las funcionalidades que todavía no están implementadas, en el orden recomendado. El catálogo de qué existe y qué falta es [funcionalidades.md](funcionalidades.md); el diseño técnico y las mediciones, [plan-port-react.md](plan-port-react.md).
 
-> Base: `main` en `165606e` (2026-10-24). Cada fase es un entregable verificable por separado: se puede publicar sin esperar a la siguiente.
+> Base: `main` con las fases 0, 3 y 4 cerradas (2026-11-05). Cada fase es un entregable verificable por separado: se puede publicar sin esperar a la siguiente.
 
 ## Cómo leer este plan
 
@@ -15,7 +15,7 @@ Plan de ejecución de las funcionalidades que todavía no están implementadas, 
 
 | Fase | Nombre | Funcionalidades | Tamaño | Depende de | Estado |
 |---|---|---|---|---|---|
-| **0** | Base mínima | Extensión real del archivo + arnés de tests de UI | S | — | 🟡 arnés hecho; extensión pendiente |
+| **0** | Base mínima | Extensión real del archivo + arnés de tests de UI | S | — | ✅ 2026-11-05 |
 | **1** | Menos espera | Precarga del motor · ETA de cómputo | M | 0 | ✅ 2026-10-24 |
 | **2** | Visibilidad | Log de síntesis | M | 0 | ✅ |
 | **3** | Base testeable | Orquestador en el dominio · tests de UI y del flujo | M | 2 | ✅ 2026-10-28 |
@@ -41,7 +41,7 @@ Plan de ejecución de las funcionalidades que todavía no están implementadas, 
 
 **Objetivo:** dejar el terreno limpio antes de agregar funcionalidades: cerrar una inconsistencia visible y habilitar tests de UI, que hoy no existen.
 
-**Estado:** 🟡 el arnés de tests de UI está montado (jsdom + Testing Library) y lo usa la fase 1; la extensión real del archivo sigue pendiente.
+**Estado:** ✅ cerrada el 2026-11-05: arnés de tests de UI (jsdom + Testing Library) y extensión real del archivo.
 
 **Depende de:** nada.
 
@@ -318,7 +318,7 @@ Todas las fases, sin excepción:
 
 1. **Tests y typecheck**: `npm test` y `npm run build` en verde. Si la fase agrega lógica, agrega tests; si toca la UI, al menos un test de componente.
 2. **Checklist manual** de `docs/desarrollo.md` para lo que los tests no cubren (build real, consola limpia, caché en caliente).
-3. **Documentación**: actualizar la fila correspondiente en [funcionalidades.md](funcionalidades.md) y, si cambia el estado por fase, la tabla de [plan §0](plan-port-react.md#0-estado-de-implementación-2026-10-24).
+3. **Documentación**: actualizar la fila correspondiente en [funcionalidades.md](funcionalidades.md) y, si cambia el estado por fase, la tabla de [plan §0](plan-port-react.md#0-estado-de-implementación-2026-11-05).
 4. **Alcance**: no se toca `helper.js`, no se cambian los defaults de §2.3, no se auto-hospedan los pesos, no se reactiva WebGPU.
 5. **Commits**: uno por funcionalidad (o uno por fase si son inseparables), con mensaje convencional en español y el estado de verificación en el cuerpo.
 6. **Sin linter ni formatter**: el typecheck es la red; no se introduce tooling nuevo en estas fases.
@@ -350,5 +350,5 @@ No forman parte de este plan, por decisión: multiarchivo o carpetas, encoders M
 ## Seguimiento
 
 - Estado por funcionalidad: [funcionalidades.md](funcionalidades.md).
-- Estado por fase del port y mediciones: [plan-port-react.md §0](plan-port-react.md#0-estado-de-implementación-2026-10-24).
+- Estado por fase del port y mediciones: [plan-port-react.md §0](plan-port-react.md#0-estado-de-implementación-2026-11-05).
 - Al cerrar una fase, actualizar las dos tablas anteriores en el mismo commit que el código.

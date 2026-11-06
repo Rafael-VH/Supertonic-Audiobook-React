@@ -4,7 +4,7 @@ Registro de todo lo que hace hoy la app y de lo que está planificado. Cada fila
 
 **Leyenda:** ✅ implementada · 🟡 parcial · ⬜ planificada
 
-> Fuente de verdad del estado por fase: [plan §0](plan-port-react.md#0-estado-de-implementación-2026-10-24). Prioridad de lo que sigue: [plan §12](plan-port-react.md#12-plan-de-mejoras-2026-10-24). Este archivo es el catálogo; el plan explica el porqué.
+> Fuente de verdad del estado por fase: [plan §0](plan-port-react.md#0-estado-de-implementación-2026-11-05). Prioridad de lo que sigue: [plan §12](plan-port-react.md#12-plan-de-mejoras-2026-10-24). Este archivo es el catálogo; el plan explica el porqué.
 
 ## Entrada de archivos
 
@@ -24,7 +24,7 @@ Registro de todo lo que hace hoy la app y de lo que está planificado. Cada fila
 | ✅ | Limpiar Markdown | Quita bloques y código inline, títulos, negritas, cursivas, enlaces, imágenes, citas, reglas horizontales y viñetas; normaliza líneas en blanco. Respeta operadores (`2 * 3`, `5 > 3`) y `snake_case`. | `domain/limpiar-markdown.ts` |
 | ✅ | Segmentar el texto | Corta en fragmentos de hasta 1500 caracteres, fusiona párrafos de menos de 200 y divide por oraciones respetando abreviaturas (`Dr.`, `Sr.`, `etc.`). | `domain/segmentar-texto.ts` |
 | ✅ | Editar el texto limpio | Un desplegable con `textarea` permite corregir el resultado antes de generar; los metadatos se recalculan al escribir. | `App.tsx` |
-| ✅ | Metadatos del archivo | Muestra nombre, cantidad de caracteres, cantidad de segmentos y duración estimada del audio (~900 caracteres por minuto). | `App.tsx` |
+| ✅ | Metadatos del archivo | Muestra el nombre con su extensión real, cantidad de caracteres, cantidad de segmentos y duración estimada del audio (~900 caracteres por minuto). | `App.tsx`, `domain/nombre-archivo.ts` |
 | ✅ | Aviso de texto largo | Por encima de 50 000 caracteres avisa que en WASM puede tardar mucho más que el tiempo real. | `App.tsx` (`AVISO_CARACTERES`) |
 
 ## Ajustes de síntesis

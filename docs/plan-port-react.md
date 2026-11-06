@@ -8,35 +8,32 @@
 
 ---
 
-## 0. Estado de implementación (2026-10-24)
+## 0. Estado de implementación (2026-11-05)
 
 > Esta sección es la foto actual del repo. El resto del documento sigue siendo el diseño de referencia.
 
-`main` en `2151d50`. El camino crítico funciona de punta a punta: un `.md` entra, un WAV sale, con los pesos cacheados y el motor en un Web Worker. La demo está publicada en GitHub Pages y fue verificada en escritorio y en celular.
+`main` con las fases 0, 3 y 4 cerradas: orquestador en el dominio, audio parcial al cancelar y selector de formatos. El camino crítico funciona de punta a punta: un `.md` entra, un WAV sale, con los pesos cacheados y el motor en un Web Worker. La demo está publicada en GitHub Pages y fue verificada en escritorio y en celular.
 
 | Fase (§7) | Estado | Qué hay en el repo |
 |---|---|---|
 | 0 — Andamiaje | ✅ | Vite 8 + React 19 + TS 7 estricto, `base: './'`, `scripts/copiar-ort.mjs` en `postinstall` |
 | 1 — Motor TTS | ✅ | `src/data/motor-tts.ts` (cliente del worker) + `src/workers/tts.worker.ts` (motor); WebGPU apagado (§5.2); inicialización única por visita, precarga al elegir archivo y ETA calibrado (§12) |
 | 2 — Descarga + caché | ✅ | `src/data/cache-modelos.ts` con `tee()` + `cache.put` por URL estable; 7 entradas cacheadas (§11.8) |
-| 3 — Dominio | 🟡 | `limpiar-markdown.ts` y `segmentar-texto.ts`; el orquestador vive en `App.tsx` |
-| 4 — UI React | 🟡 | Un `.md` con arrastrar/soltar, ajustes, tema claro/oscuro, progreso, cancelar, resultado con descarga |
-| 5 — Formatos | ⬜ | Sólo WAV, generado por `src/data/wav.ts`; no hay selector de formatos |
-| 6 — Tests | 🟡 | 53 tests de `vitest` (dominio, adaptadores, motor y UI de la precarga con jsdom); falta el test de humo en navegador |
+| 3 — Dominio | ✅ | `limpiar-markdown.ts`, `segmentar-texto.ts`, `procesar-archivo.ts` (orquestador con motor inyectado), `nombre-archivo.ts`, `formato.ts` y `eta.ts` |
+| 4 — UI React | ✅ | Un `.md` con arrastrar/soltar, ajustes, tema claro/oscuro, progreso, cancelar con audio parcial, selector de formatos y resultado con descarga |
+| 5 — Formatos | 🟡 | WAV real; el selector muestra MP3/OGG/FLAC deshabilitados con "próximamente". Faltan los encoders |
+| 6 — Tests | 🟡 | 73 tests de `vitest` (dominio, adaptadores, motor, orquestador y UI con jsdom); falta el test de humo en navegador |
 | 7 — Deploy | ✅ | `.github/workflows/deploy.yml` + `coi-serviceworker`, verificado contra la URL real |
 
 **Lo que falta, por valor**
 
-1. Log de síntesis y separación en paneles (Fase 4, puntos 1 y 4).
-2. Tests de UI con `@testing-library/react` y del orquestador (Fase 6).
-3. i18n ES/EN y "Acerca de" con licencias y créditos (Fase 4, punto 7).
-4. Selector de formatos con MP3/OGG/FLAC deshabilitados y "próximamente" (Fase 5).
-5. Temas neumo/skeuo.
+1. i18n ES/EN y "Acerca de" con licencias y créditos (fase 5 del plan por fases).
+2. Test de humo en navegador real con motor y red reales (fase 8).
+3. Temas neumo/skeuo.
 
 **Divergencias conscientes respecto del plan**
 
-- **Orquestación fuera del dominio.** El flujo leer → limpiar → segmentar → sintetizar → concatenar → WAV quedó en `App.tsx`, no en `domain/procesar-archivo.ts`. Si se agrega multiarchivo o cola de trabajos, es el primer candidato a extraerse.
-- **53 tests, no 28.** Se sumaron `concatenar-muestras` (2), `ajustes` (11), `motor-una-vez` (3), `eta` (8) y UI de precarga y voces (6, con jsdom), que no existen en el desktop. Faltan los 10 de `procesar_archivo` y los 9 de `repositorio_archivos`: sus equivalentes web todavía no son unidades separadas.
+- **73 tests, no 28.** Se sumaron `concatenar-muestras` (2), `ajustes` (11), `motor-una-vez` (3), `eta` (8), `formato` (2), `nombre-archivo` (7), orquestador (5) y UI de precarga, flujo y voces (7, con jsdom), que no existen en el desktop. Faltan los 9 de `repositorio_archivos`: su equivalente web es un archivo por vez.
 - **Preferencias en una sola clave.** Todo se guarda como JSON bajo `supertonic.ajustes`, normalizado campo por campo al leer (`normalizarAjustes`), en lugar del esquema de claves sueltas del desktop.
 - **ETA.** Antes de generar la UI muestra duración estimada del audio; durante la corrida, un restante calculado con el RTF medido en los primeros segmentos (no un RTF de tabla).
 
