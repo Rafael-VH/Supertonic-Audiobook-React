@@ -20,7 +20,7 @@ Plan de ejecución de las funcionalidades que todavía no están implementadas, 
 | **2** | Visibilidad | Log de síntesis | M | 0 | ✅ |
 | **3** | Base testeable | Orquestador en el dominio · tests de UI y del flujo | M | 2 | ✅ 2026-10-28 |
 | **4** | Salida útil | Cancelar con audio parcial · selector de formatos | S–M | 3 | ✅ 2026-10-29 |
-| **5** | Producto bilingüe | i18n ES/EN · Acerca de | L | 3 | ⬜ |
+| **5** | Producto bilingüe | i18n ES/EN · Acerca de | L | 3 | ✅ 2026-11-05 |
 | **6** | Paridad con el desktop | Muestra de voz · panel de modelos · paneles separados | M | 1, 2, 5 | ⬜ |
 | **7** | Estética | Temas neumo y skeuo | M | 5 | ⬜ |
 | **8** | Endurecimiento | Test de humo en navegador real | S | 4 | ⬜ |
@@ -222,6 +222,8 @@ Hoy la UI muestra la duración estimada del **audio** (`~N min`), no la espera d
 **Objetivo:** que la app hable inglés además de español y que las licencias y créditos sean visibles, requisito del port.
 
 **Depende de:** fase 3 (sin extraer el flujo, cada texto se toca dos veces).
+
+**Estado:** ✅ cerrada el 2026-11-05: diccionario tipado ES/EN (una clave faltante rompe `tsc`), selector de idioma en la cabecera y `AcercaDe` con `<dialog>` nativo.
 
 ### 5.1 i18n ES/EN
 

@@ -8,17 +8,19 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { cargarVoz, estaIniciado, inicializarMotor, type Backend } from '../data/motor-tts'
+import type { Traductor } from '../i18n/traductor'
 
 export type EstadoMotor = 'inactivo' | 'preparando' | 'listo' | 'error'
 
 type Opciones = {
   alMensaje: (mensaje: string) => void
   alBackend: (backend: Backend) => void
+  t: Traductor
 }
 
 const MB = 1024 * 1024
 
-export function useMotor({ alMensaje, alBackend }: Opciones): {
+export function useMotor({ alMensaje, alBackend, t }: Opciones): {
   estado: EstadoMotor
   preparar: (voz: string) => Promise<void>
 } {
@@ -41,20 +43,25 @@ export function useMotor({ alMensaje, alBackend }: Opciones): {
     if (inicializando.current) return inicializando.current
 
     setEstado('preparando')
-    mensaje.current('Cargando modelos…')
+    mensaje.current(t('carga.iniciando'))
 
     // Sin WebGPU a propósito: en GPU móvil ORT devuelve audio corrupto.
     // Ver el comentario de inicializarMotor() en data/motor-tts.ts.
     const promesa = inicializarMotor({
-      alModelo: (nombre, i, total) => mensaje.current(`Cargando modelos ${i}/${total}: ${nombre}`),
+      alModelo: (nombre, i, total) =>
+        mensaje.current(t('carga.modelo', { i, total, nombre })),
       alProgreso: (p) => {
         if (p.desdeCache) {
-          mensaje.current(`Modelo en caché: ${p.archivo}`)
+          mensaje.current(t('carga.modeloCache', { archivo: p.archivo }))
           return
         }
         const porcentaje = p.total ? Math.round((p.cargado / p.total) * 100) : 0
         mensaje.current(
-          `Descargando ${p.archivo} ${porcentaje}% (${(p.cargado / MB).toFixed(1)} MB)`,
+          t('carga.descargando', {
+            archivo: p.archivo,
+            pct: porcentaje,
+            mb: (p.cargado / MB).toFixed(1),
+          }),
         )
       },
     }).then(({ backend: real }) => {
@@ -78,11 +85,13 @@ export function useMotor({ alMensaje, alBackend }: Opciones): {
     if (vozEnCurso.current) await vozEnCurso.current.catch(() => {})
     if (vozCargada.current === voz) return
 
-    mensaje.current(`Cargando voz ${voz}…`)
+    mensaje.current(t('carga.voz', { voz }))
     const promesa = cargarVoz({
       voz,
       alProgreso: (p) =>
-        mensaje.current(p.desdeCache ? `Voz ${voz} en caché` : `Descargando voz ${voz}…`),
+        mensaje.current(
+          p.desdeCache ? t('carga.vozCache', { voz }) : t('carga.vozDescargando', { voz }),
+        ),
     }).then(() => {
       vozCargada.current = voz
     })
@@ -104,7 +113,7 @@ export function useMotor({ alMensaje, alBackend }: Opciones): {
       await iniciar()
       await asegurarVoz(voz)
       setEstado('listo')
-      mensaje.current('Modelos listos.')
+      mensaje.current(t('carga.lista'))
     } catch (error) {
       setEstado(estaIniciado() ? 'listo' : 'error')
       throw error

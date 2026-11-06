@@ -56,6 +56,12 @@ describe('normalizarAjustes', () => {
     expect(normalizarAjustes({ tema: 'claro' }).tema).toBe('claro')
     expect(normalizarAjustes({ tema: 'sepia' }).tema).toBe(AJUSTES_DEFECTO.tema)
   })
+
+  it('sólo acepta los dos idiomas de interfaz conocidos', () => {
+    expect(normalizarAjustes({ idioma: 'en' }).idioma).toBe('en')
+    expect(normalizarAjustes({ idioma: 'es' }).idioma).toBe('es')
+    expect(normalizarAjustes({ idioma: 'fr' }).idioma).toBe(AJUSTES_DEFECTO.idioma)
+  })
 })
 
 describe('temaDelSistema', () => {
@@ -79,7 +85,14 @@ describe('temaDelSistema', () => {
 describe('cargarAjustes / guardarAjustes', () => {
   it('hace roundtrip', () => {
     const almacen = almacenFalso()
-    const elegidos = { voz: 'F3', lang: 'pt', pasos: 8, velocidad: 1.3, tema: 'oscuro' as const }
+    const elegidos = {
+      voz: 'F3',
+      lang: 'pt',
+      pasos: 8,
+      velocidad: 1.3,
+      tema: 'oscuro' as const,
+      idioma: 'en' as const,
+    }
     guardarAjustes(elegidos, almacen)
     expect(cargarAjustes(almacen)).toEqual(elegidos)
   })

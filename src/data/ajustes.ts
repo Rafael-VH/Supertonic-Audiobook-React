@@ -7,12 +7,16 @@
 
 export type Tema = 'claro' | 'oscuro'
 
+/** Idioma de la interfaz; `lang` es el idioma de la voz sintetizada. */
+export type IdiomaInterfaz = 'es' | 'en'
+
 export type Ajustes = {
   voz: string
   lang: string
   pasos: number
   velocidad: number
   tema: Tema
+  idioma: IdiomaInterfaz
 }
 
 /** Sólo lo que necesitamos de localStorage; así los tests no necesitan DOM. */
@@ -23,41 +27,44 @@ export type Almacen = {
 
 export const VOCES = ['M1', 'M2', 'M3', 'M4', 'M5', 'F1', 'F2', 'F3', 'F4', 'F5'] as const
 
-/** Idiomas que acepta `helper.js` (`AVAILABLE_LANGS`), con nombre legible. */
-export const IDIOMAS: ReadonlyArray<readonly [codigo: string, nombre: string]> = [
-  ['es', 'Español'],
-  ['en', 'Inglés'],
-  ['pt', 'Portugués'],
-  ['fr', 'Francés'],
-  ['it', 'Italiano'],
-  ['de', 'Alemán'],
-  ['nl', 'Neerlandés'],
-  ['sv', 'Sueco'],
-  ['da', 'Danés'],
-  ['fi', 'Finés'],
-  ['et', 'Estonio'],
-  ['lv', 'Letón'],
-  ['lt', 'Lituano'],
-  ['pl', 'Polaco'],
-  ['cs', 'Checo'],
-  ['sk', 'Eslovaco'],
-  ['sl', 'Esloveno'],
-  ['hr', 'Croata'],
-  ['hu', 'Húngaro'],
-  ['ro', 'Rumano'],
-  ['bg', 'Búlgaro'],
-  ['el', 'Griego'],
-  ['ru', 'Ruso'],
-  ['uk', 'Ucraniano'],
-  ['tr', 'Turco'],
-  ['ar', 'Árabe'],
-  ['hi', 'Hindi'],
-  ['ko', 'Coreano'],
-  ['ja', 'Japonés'],
-  ['vi', 'Vietnamita'],
-  ['id', 'Indonesio'],
-  ['na', 'Automático'],
-]
+/**
+ * Idiomas que acepta `helper.js` (`AVAILABLE_LANGS`). El nombre visible de cada
+ * uno vive en el diccionario (`idioma.<código>`), no acá.
+ */
+export const IDIOMAS = [
+  'es',
+  'en',
+  'pt',
+  'fr',
+  'it',
+  'de',
+  'nl',
+  'sv',
+  'da',
+  'fi',
+  'et',
+  'lv',
+  'lt',
+  'pl',
+  'cs',
+  'sk',
+  'sl',
+  'hr',
+  'hu',
+  'ro',
+  'bg',
+  'el',
+  'ru',
+  'uk',
+  'tr',
+  'ar',
+  'hi',
+  'ko',
+  'ja',
+  'vi',
+  'id',
+  'na',
+] as const
 
 export const PASOS_MIN = 5
 export const PASOS_MAX = 12
@@ -70,6 +77,7 @@ export const AJUSTES_DEFECTO: Ajustes = {
   pasos: 5,
   velocidad: 1.1,
   tema: 'claro',
+  idioma: 'es',
 }
 
 /** Preferencia del sistema; en un entorno sin `matchMedia` (tests) es 'claro'. */
@@ -98,10 +106,11 @@ export function normalizarAjustes(bruto: unknown): Ajustes {
 
   return {
     voz: VOCES.includes(datos.voz as (typeof VOCES)[number]) ? datos.voz! : AJUSTES_DEFECTO.voz,
-    lang: IDIOMAS.some(([codigo]) => codigo === datos.lang) ? datos.lang! : AJUSTES_DEFECTO.lang,
+    lang: IDIOMAS.some((codigo) => codigo === datos.lang) ? datos.lang! : AJUSTES_DEFECTO.lang,
     pasos: Math.round(acotar(datos.pasos, PASOS_MIN, PASOS_MAX, AJUSTES_DEFECTO.pasos)),
     velocidad: acotar(datos.velocidad, VELOCIDAD_MIN, VELOCIDAD_MAX, AJUSTES_DEFECTO.velocidad),
     tema: datos.tema === 'oscuro' || datos.tema === 'claro' ? datos.tema : AJUSTES_DEFECTO.tema,
+    idioma: datos.idioma === 'en' || datos.idioma === 'es' ? datos.idioma : AJUSTES_DEFECTO.idioma,
   }
 }
 

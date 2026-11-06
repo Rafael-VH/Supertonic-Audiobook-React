@@ -24,7 +24,7 @@ npm run dev    # http://localhost:5173
 | `npm run dev` | Vite con las cabeceras de aislamiento. |
 | `npm run build` | `tsc --noEmit` + build a `dist/`. Es el único typecheck que hay. |
 | `npm run preview` | Sirve `dist/` con las mismas cabeceras. |
-| `npm test` / `npm run test:watch` | Vitest en modo `node`, sin DOM. |
+| `npm test` / `npm run test:watch` | Vitest; el entorno por defecto es `node` y los tests de UI usan jsdom (`// @vitest-environment jsdom`). |
 | `npm run copy:ort` | Copia solo `ort-wasm-simd-threaded.jsep.{wasm,mjs}` a `public/ort/`. Corre también en `postinstall`. |
 | `npm run assets:fetch` | Baja los ~398 MB a `assets/` (ignorado por git) para reproducir las mediciones del plan. La app **no** los usa en runtime. |
 
@@ -38,13 +38,18 @@ src/
 ├── domain/                    # puro: sin React, sin DOM, sin red
 │   ├── limpiar-markdown.ts    # Markdown → texto hablable
 │   ├── segmentar-texto.ts     # texto → segmentos de hasta 1500 caracteres
+│   ├── procesar-archivo.ts    # orquestador con motor y traductor inyectados
+│   ├── nombre-archivo.ts      # base + extensión real del archivo
+│   ├── formato.ts             # formatos de salida y normalización
 │   └── eta.ts                 # tiempo restante a partir de lo medido
+├── i18n/                      # diccionarios ES/EN y traductor tipado
 ├── data/                      # adaptadores concretos
 │   ├── ajustes.ts             # defaults, validación y localStorage
 │   ├── motor-tts.ts           # cliente del worker (promesas sobre mensajes)
 │   ├── cache-modelos.ts       # descarga de HF + Cache Storage
 │   └── wav.ts                 # Float32Array → WAV PCM16
 ├── ui/useMotor.ts             # preparación compartida por precarga y Generar
+├── ui/AcercaDe.tsx            # versión, licencias y créditos en un <dialog>
 ├── workers/tts.worker.ts      # motor ORT + helper.js, fuera del hilo de UI
 └── lib/supertonic/helper.js   # vendor MIT: se copia, no se toca
 tests/                         # vitest, un archivo por unidad
@@ -91,7 +96,7 @@ Detalles que no conviene romper:
 ## Tests y verificación
 
 ```bash
-npm test        # 53 tests: dominio, adaptadores, motor y UI de la precarga
+npm test        # 89 tests: dominio, adaptadores, motor, orquestador, i18n y UI
 npm run build   # typecheck + bundle
 ```
 
@@ -106,6 +111,7 @@ Antes de dar por buena una UI o un cambio en la carga del motor, además de los 
 5. Generar un texto corto y descargar el WAV; tras el primer segmento debe verse «Faltan ≈ …».
 6. Generar otra vez sin recargar: no debe decir "Cargando modelos".
 7. Cancelar a mitad y comprobar que el siguiente intento no vuelve a cargar el modelo.
+8. Cambiar el idioma de la interfaz a inglés: todos los textos, incluidos los ajustes y el estado, deben cambiar sin recargar. Abrir *Acerca de*, recorrer el diálogo con `Tab`, cerrarlo con `Esc` y comprobar que la versión coincide con `package.json`.
 
 ## Deploy
 
@@ -129,4 +135,4 @@ Push a `main` dispara [`.github/workflows/deploy.yml`](../.github/workflows/depl
 
 ## Estado y siguientes pasos
 
-La foto actual del repo por fase está en [plan §0](plan-port-react.md#0-estado-de-implementación-2026-10-24) y la lista priorizada de mejoras en [plan §12](plan-port-react.md#12-plan-de-mejoras-2026-10-24). Lo pendiente de mayor valor: log de síntesis, orquestador con tests del flujo, selector de formatos y ampliar los tests de UI.
+La foto actual del repo por fase está en [plan §0](plan-port-react.md#0-estado-de-implementación-2026-11-05) y la lista priorizada de mejoras en [plan §12](plan-port-react.md#12-plan-de-mejoras-2026-10-24). Lo pendiente de mayor valor: test de humo en navegador real, muestra de voz, panel de modelos y temas neumo/skeuo.

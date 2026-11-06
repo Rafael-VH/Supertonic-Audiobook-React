@@ -5,6 +5,7 @@ import { segmentarTexto } from './segmentar-texto'
 import { concatenarMuestras, muestrasAWav } from '../data/wav'
 import { type Ajustes } from '../data/ajustes'
 import { type Avance, estimarRestante } from './eta'
+import type { Traductor } from '../i18n/traductor'
 
 export type Progreso = {
   segmento: number
@@ -48,6 +49,7 @@ export interface OpcionesGenerar {
   ajustes: Ajustes
   nombreBase: string
   motor: MotorSintetizador
+  t: Traductor
   debeCancelar: () => boolean
   alMensaje: (mensaje: string, error?: boolean) => void
   alProgreso: (progreso: Progreso) => void
@@ -65,6 +67,7 @@ export async function generar({
   ajustes,
   nombreBase,
   motor,
+  t,
   debeCancelar,
   alMensaje,
   alProgreso,
@@ -78,7 +81,7 @@ export async function generar({
 }: OpcionesGenerar): Promise<void> {
   const partes = texto ? segmentarTexto(texto) : []
   if (partes.length === 0) {
-    alMensaje('No hay texto para sintetizar.', true)
+    alMensaje(t('motor.sinTexto'), true)
     alLimpiarProgreso()
     return
   }
@@ -86,7 +89,7 @@ export async function generar({
   alInicio?.()
   alProgreso({ segmento: 1, segmentos: partes.length, paso: 0, pasos: ajustes.pasos })
   alRestante(null)
-  alMensaje('Preparando motor…')
+  alMensaje(t('motor.preparando'))
 
   const totalCaracteres = partes.reduce((suma, parte) => suma + parte.length, 0)
   const mediciones: Avance[] = []
@@ -102,7 +105,7 @@ export async function generar({
     for (let i = 0; i < partes.length; i++) {
       if (debeCancelar()) break
       alProgreso({ segmento: i + 1, segmentos: partes.length, paso: 0, pasos: ajustes.pasos })
-      alMensaje(`Sintetizando segmento ${i + 1} de ${partes.length}…`)
+      alMensaje(t('motor.sintetizando', { n: i + 1, total: partes.length }))
       const res = await motor.sintetizar({
         texto: partes[i],
         lang: ajustes.lang,
@@ -115,7 +118,7 @@ export async function generar({
             paso: hecho,
             pasos: ajustes.pasos,
           })
-          alMensaje(`Segmento ${i + 1} de ${partes.length} — paso ${hecho}/${ajustes.pasos}`)
+          alMensaje(t('motor.paso', { n: i + 1, total: partes.length, hecho, pasos: ajustes.pasos }))
         },
       })
       muestras.push(res.muestras)
@@ -143,19 +146,29 @@ export async function generar({
       const rtfTotal = totalAudioSegundos > 0 ? totalMs / 1000 / totalAudioSegundos : 0
       const tamanoEstimadoMB = totalAudioSegundos > 0 ? (totalAudioSegundos / 60) * 0.5 : 0
       alLog(
-        `Segmento ${i + 1} de ${partes.length}: ${totalAudioSegundos.toFixed(1)} s de audio, ${totalMs.toFixed(0)} ms cómputo, RTF ${rtfTotal.toFixed(2)}, ~${tamanoEstimadoMB.toFixed(1)} MB`,
+        t('motor.log', {
+          n: i + 1,
+          total: partes.length,
+          audio: totalAudioSegundos.toFixed(1),
+          ms: totalMs.toFixed(0),
+          rtf: rtfTotal.toFixed(2),
+          mb: tamanoEstimadoMB.toFixed(1),
+        }),
       )
     }
 
     if (debeCancelar()) {
       if (muestras.length === 0) {
-        const mensaje = 'Cancelado. No se generó audio.'
+        const mensaje = t('motor.canceladoSinAudio')
         alMensaje(mensaje)
         alCancelado?.(mensaje)
         alLimpiarProgreso()
         return
       }
-      const mensaje = `Cancelado tras ${muestras.length} de ${partes.length} segmentos. Audio parcial generado.`
+      const mensaje = t('motor.canceladoParcial', {
+        hechos: muestras.length,
+        total: partes.length,
+      })
       alMensaje(mensaje)
       try {
         const audio = concatenarMuestras(muestras)
@@ -196,15 +209,15 @@ export async function generar({
       blob,
       nombreBase,
     })
-    alMensaje('Listo.')
+    alMensaje(t('motor.listo'))
     alProgreso({ segmento: partes.length, segmentos: partes.length, paso: ajustes.pasos, pasos: ajustes.pasos })
   } catch (error) {
     const mensaje = error instanceof Error ? error.message : String(error)
     if (mensaje === 'Cancelado.') {
-      alMensaje('Cancelado.')
-      alCancelado?.('Cancelado.')
+      alMensaje(t('motor.cancelado'))
+      alCancelado?.(t('motor.cancelado'))
     } else {
-      alMensaje(`Error: ${mensaje}`, true)
+      alMensaje(t('error.generico', { mensaje }), true)
       alError?.(mensaje)
     }
   } finally {

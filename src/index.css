@@ -338,6 +338,68 @@ input[type='range']:disabled {
   color: var(--tenue);
 }
 
+.acerca-boton {
+  margin-top: 0.9rem;
+  padding: 0.45rem 0.8rem;
+  font-size: 0.875rem;
+}
+
+/* --- Acerca de --- */
+
+dialog.acerca {
+  width: calc(100% - 2rem);
+  max-width: 34rem;
+  padding: 1.25rem;
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+  background: var(--superficie);
+  color: var(--texto);
+  box-shadow: var(--sombra);
+}
+
+dialog.acerca::backdrop {
+  background: rgb(13 17 23 / 55%);
+}
+
+.acerca-cabecera {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.acerca-cabecera h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.acerca-version {
+  margin: 0.35rem 0 0.9rem;
+  font-size: 0.85rem;
+  color: var(--tenue);
+  font-variant-numeric: tabular-nums;
+}
+
+.acerca-creditos {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.acerca-creditos li {
+  margin-bottom: 0.45rem;
+  font-size: 0.9rem;
+}
+
+.acerca-creditos a {
+  color: var(--acento);
+}
+
+.acerca-nota {
+  margin: 0.9rem 0 0;
+  font-size: 0.8rem;
+  color: var(--tenue);
+}
+
 /* --- Acciones --- */
 
 .acciones {
@@ -404,6 +466,18 @@ button:disabled {
 .icono svg {
   width: 1rem;
   height: 1rem;
+}
+
+.cabecera-acciones {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.selector-idioma {
+  width: auto;
+  padding: 0.45rem 0.6rem;
+  font-size: 0.875rem;
 }
 
 .backend {

@@ -7,7 +7,7 @@ Convertí un archivo Markdown o de texto en un audiolibro en WAV. La síntesis d
 ## Cómo se usa
 
 1. **Cargá el archivo.** Arrastrá un `.md`, `.markdown` o `.txt` a la zona de carga, o hacé clic para elegirlo. Se limpia el Markdown (títulos, negritas, enlaces, código) y podés revisar o editar el texto resultante.
-2. **Ajustá la voz.** Al cargar el archivo aparece el panel de ajustes al lado del texto: voz, idioma, pasos y velocidad.
+2. **Ajustá la voz.** Al cargar el archivo aparece el panel de ajustes al lado del texto: voz, idioma de la voz, pasos, formato y velocidad. El idioma de la interfaz (ES/EN) se cambia desde la cabecera.
 3. **Generá el audio.** El botón *Generar audio* sintetiza el texto por segmentos y muestra el avance.
 4. **Descargalo.** Al terminar tenés un reproductor y el botón *Descargar `<nombre>`.wav*.
 
@@ -23,10 +23,12 @@ La descarga arranca apenas elegís el archivo, en segundo plano, así que se sol
 |---|---|
 | **Voz** | 10 voces: M1–M5 masculinas y F1–F5 femeninas. Por defecto, M1. |
 | **Idioma** | 31 idiomas, más *Automático* para que lo deduzca el modelo. Por defecto, español. |
+| **Idioma de la interfaz** | Español o inglés, desde el selector de la cabecera. |
 | **Pasos** | De 5 a 12. Más pasos dan mejor calidad a cambio de más tiempo de cómputo. Por defecto, 5. |
 | **Velocidad** | De 0,7× a 2×. Por defecto, 1,1×. |
+| **Formato** | WAV disponible; MP3, OGG y FLAC aparecen deshabilitados hasta que exista un codificador. |
 
-Se guardan en tu navegador y se recuperan en la próxima visita. También se recuerda el tema claro u oscuro.
+Se guardan en tu navegador y se recuperan en la próxima visita. También se recuerdan el tema claro u oscuro y el idioma de la interfaz.
 
 ## Cuánto tarda la síntesis
 
@@ -52,7 +54,7 @@ El texto se procesa en la pestaña y nunca se envía a un servidor. La única co
 - **Sólo WAV**: MP3, OGG y FLAC todavía no están implementados.
 - **Cancelar** corta al terminar el segmento en curso (puede tardar algunos minutos en equipos lentos), a cambio de no volver a cargar el modelo.
 - **WebGPU está desactivado**: en GPUs móviles ONNX Runtime 1.30 devuelve audio corrupto sin lanzar ningún error. Se usa WASM multihilo.
-- La interfaz está en español por ahora.
+- El idioma de la **interfaz** es español o inglés; la **voz** admite 31 idiomas, elegidos por separado en los ajustes.
 
 ## Créditos y licencias
 
@@ -60,6 +62,8 @@ El texto se procesa en la pestaña y nunca se envía a un servidor. La única co
 - `src/lib/supertonic/helper.js` es una copia del port web del vendor, [`supertone-oss-archive/supertonic`](https://github.com/supertone-oss-archive/supertonic) — licencia MIT.
 - [ONNX Runtime Web](https://onnxruntime.ai/) — licencia MIT.
 - [coi-serviceworker](https://github.com/gzuidhof/coi-serviceworker) — licencia MIT.
+
+La app muestra estos mismos créditos y la versión en *Acerca de*, desde el panel de ajustes.
 
 ## Para desarrolladores
 

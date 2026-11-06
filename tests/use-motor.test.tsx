@@ -19,6 +19,7 @@ const motor = vi.hoisted(() => ({
 vi.mock('../src/data/motor-tts', () => motor)
 
 import { useMotor } from '../src/ui/useMotor'
+import { crearTraductor } from '../src/i18n/traductor'
 
 describe('useMotor', () => {
   beforeEach(() => {
@@ -34,7 +35,9 @@ describe('useMotor', () => {
         new Promise<void>((resolve) => pendientes.push({ voz, resolver: resolve })),
     )
 
-    const { result } = renderHook(() => useMotor({ alMensaje: () => {}, alBackend: () => {} }))
+    const { result } = renderHook(() =>
+      useMotor({ alMensaje: () => {}, alBackend: () => {}, t: crearTraductor('es') }),
+    )
 
     let precarga: Promise<void> = Promise.resolve()
     let generar: Promise<void> = Promise.resolve()

@@ -35,11 +35,13 @@ Registro de todo lo que hace hoy la app y de lo que está planificado. Cada fila
 | ✅ | Idioma | 31 idiomas más *Automático*, con los mismos códigos que acepta el modelo. | `data/ajustes.ts` (`IDIOMAS`) |
 | ✅ | Pasos de inferencia | Slider de 5 a 12, paso 1. Más pasos, más calidad y más tiempo; el valor por defecto es 5. | `App.tsx`, `data/ajustes.ts` |
 | ✅ | Velocidad | Slider de 0,7× a 2× en incrementos de 0,05; por defecto 1,1×. | `App.tsx`, `data/ajustes.ts` |
-| ✅ | Persistir ajustes | Guarda voz, idioma, pasos, velocidad y tema como JSON en `localStorage` (`supertonic.ajustes`), normalizando cada campo al leer. | `data/ajustes.ts` |
+| ✅ | Persistir ajustes | Guarda voz, idioma de la voz, idioma de la interfaz, pasos, velocidad y tema como JSON en `localStorage` (`supertonic.ajustes`), normalizando cada campo al leer. | `data/ajustes.ts` |
 | ✅ | Panel contextual | La tarjeta de ajustes no se muestra hasta que hay un archivo cargado; entonces aparece al lado del texto. | `App.tsx` |
 | ✅ | Disposición adaptable | Con archivo, texto y ajustes van en dos columnas (por encima de 820 px de ancho) y se apilan en pantallas angostas. | `index.css` (`.paneles.dos-columnas`) |
 | ✅ | Selector de formatos | Muestra WAV disponible y MP3/OGG/FLAC deshabilitados con "próximamente". La salida sigue siendo WAV. | `App.tsx`, `domain/formato.ts` |
 | ✅ | Tema claro/oscuro | Alterna con un botón, respeta `prefers-color-scheme` si no hay preferencia guardada y se aplica antes del primer pintado. | `App.tsx`, `data/ajustes.ts`, `index.css` |
+| ✅ | Idioma de la interfaz | Selector ES/EN en la cabecera que traduce toda la UI sin recargar, persiste en los ajustes y actualiza `document.documentElement.lang`. | `App.tsx`, `i18n/` |
+| ✅ | Acerca de | `<dialog>` nativo con la versión de `package.json`, licencia MIT del código, OpenRAIL-M de los pesos, créditos y enlaces al repo del vendor y a Hugging Face. Se cierra con el botón, `Esc` o clic en el fondo. | `ui/AcercaDe.tsx`, `vite.config.ts` |
 
 ## Generación y salida
 
@@ -77,7 +79,7 @@ Registro de todo lo que hace hoy la app y de lo que está planificado. Cada fila
 |---|---|---|---|
 | ✅ | Build con typecheck | `tsc --noEmit` + Vite; emite `dist/` de ~28 MB sin el WASM duplicado. | `package.json`, `vite.config.ts` |
 | ✅ | Deploy automático | Push a `main` construye y publica en GitHub Pages. | `.github/workflows/deploy.yml` |
-| ✅ | Tests unitarios | 53 tests con Vitest: dominio, adaptadores y UI de la precarga (jsdom). | `tests/` |
+| ✅ | Tests unitarios | 89 tests con Vitest: dominio, adaptadores, orquestador, i18n y UI con jsdom. | `tests/` |
 | ✅ | Favicon sin 404 | Icono inline como data URI, sin archivo binario extra. | `index.html` |
 
 ## Próximas funcionalidades
@@ -90,10 +92,10 @@ Ordenadas por relación valor/riesgo. Las que llevan \* no están en [plan §12]
 |---|---|---|---|
 | ✅ | Log de síntesis | Reemplazar la línea de estado por un registro con niveles, autoscroll y tope de líneas, como el de la app de escritorio. | Alta |
 | ✅ | Orquestador en el dominio | Extraer el flujo de `App.tsx` a `domain/procesar-archivo.ts` con dobles, para poder testearlo. | Media |
-| ⬜ | Tests de UI (ampliar) | Sumar a la cobertura actual selección de archivo, cambio de idioma y cambio de voz con `@testing-library/react`. | Media |
+| ✅ | Tests de UI (ampliar) | Sumar a la cobertura actual selección de archivo, cambio de idioma y cambio de voz con `@testing-library/react`. | Media |
 | ✅ | Selector de formatos | Mostrar WAV activo y MP3/OGG/FLAC deshabilitados con *próximamente*. | Media |
-| ⬜ | i18n ES/EN | Interfaz bilingüe con las mismas claves que la app de escritorio. | Media |
-| ⬜ | Acerca de | Versión, créditos y licencias (MIT del código, OpenRAIL-M de los pesos) accesibles desde la UI. | Media |
+| ✅ | i18n ES/EN | Interfaz bilingüe con las mismas claves que la app de escritorio. | Media |
+| ✅ | Acerca de | Versión, créditos y licencias (MIT del código, OpenRAIL-M de los pesos) accesibles desde la UI. | Media |
 | ✅ | Cancelar con audio parcial | Ofrecer el WAV de los segmentos ya completados al cancelar. | Media |
 | ⬜ | Muestra de voz\* | Botón *Escuchar* que sintetiza y reproduce una frase corta con la voz y el idioma elegidos. | Media |
 | ⬜ | Panel de modelos\* | Ver qué archivos están en caché, cuánto ocupan y borrarlos desde la UI (`listarCache()` y `borrarCache()` ya existen). | Baja |

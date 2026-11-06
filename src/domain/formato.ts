@@ -4,14 +4,17 @@ export type FormatoInfo = {
   id: FormatoSalida
   nombre: string
   disponible: boolean
-  etiqueta?: string
 }
 
+/**
+ * Nombres de formato: son marcas, no se traducen. La etiqueta de los que
+ * todavía no se pueden generar (`formato.proximamente`) la pone la UI.
+ */
 export const FORMATOS: FormatoInfo[] = [
   { id: 'wav', nombre: 'WAV', disponible: true },
-  { id: 'mp3', nombre: 'MP3', disponible: false, etiqueta: 'próximamente' },
-  { id: 'ogg', nombre: 'OGG', disponible: false, etiqueta: 'próximamente' },
-  { id: 'flac', nombre: 'FLAC', disponible: false, etiqueta: 'próximamente' },
+  { id: 'mp3', nombre: 'MP3', disponible: false },
+  { id: 'ogg', nombre: 'OGG', disponible: false },
+  { id: 'flac', nombre: 'FLAC', disponible: false },
 ]
 
 export function normalizarFormatos(formato: unknown): FormatoSalida {

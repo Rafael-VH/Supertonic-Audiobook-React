@@ -11,15 +11,16 @@
  *
  * La precarga arranca al elegir el archivo (no al tocar Generar) y el tiempo
  * restante se estima con lo medido en los primeros segmentos. Ajustes y tema se
- * guardan en localStorage.
+ * guardan en localStorage. Todos los textos visibles salen de `i18n/`.
  */
 
-import { useLayoutEffect, useEffect, useRef, useState } from 'react'
+import { useLayoutEffect, useEffect, useMemo, useRef, useState } from 'react'
 import { limpiarMarkdown } from './domain/limpiar-markdown'
 import { MAX_CHARS_PER_SEGMENT, segmentarTexto } from './domain/segmentar-texto'
 import { sintetizar, type Backend } from './data/motor-tts'
 import { formatearRestante } from './domain/eta'
 import { useMotor } from './ui/useMotor'
+import { AcercaDe } from './ui/AcercaDe'
 import {
   IDIOMAS,
   PASOS_MAX,
@@ -30,10 +31,12 @@ import {
   cargarAjustes,
   guardarAjustes,
   type Ajustes,
+  type IdiomaInterfaz,
 } from './data/ajustes'
 import { generar as generarOrquestador } from './domain/procesar-archivo'
 import { separarNombre } from './domain/nombre-archivo'
 import { FORMATOS } from './domain/formato'
+import { crearTraductor, type Traductor } from './i18n/traductor'
 
 /** ~900 caracteres por minuto de audio en español. Sólo para estimar. */
 const CHARS_POR_MINUTO = 900
@@ -42,6 +45,17 @@ const AVISO_CARACTERES = 50_000
 const EXTENSIONES = /\.(md|markdown|txt)$/i
 
 type Progreso = { segmento: number; segmentos: number; paso: number; pasos: number }
+
+/** Métricas del resultado que la UI vuelve a formatear al cambiar de idioma. */
+type Metricas = {
+  segundos: number
+  ms: number
+  rtf: number
+  tamanoMB: number
+  parcial?: boolean
+  segmentosCompletados?: number
+  segmentosTotales?: number
+}
 
 function IconoSol() {
   return (
@@ -60,21 +74,33 @@ function IconoLuna() {
   )
 }
 
+function detalleBase(metricas: Metricas, t: Traductor): string {
+  return t('resultado.detalle', {
+    segundos: metricas.segundos.toFixed(1),
+    tiempo: (metricas.ms / 1000).toFixed(1),
+    rtf: metricas.rtf.toFixed(2),
+    tamano: metricas.tamanoMB.toFixed(1),
+  })
+}
+
 export default function App() {
   const [texto, setTexto] = useState('')
   const [nombreBase, setNombreBase] = useState('audio')
   const [extension, setExtension] = useState('')
-  const [estado, setEstado] = useState('Todavía no elegiste ningún archivo.')
+  const [estado, setEstado] = useState('')
   const [esError, setEsError] = useState(false)
   const [ocupado, setOcupado] = useState(false)
   const [backend, setBackend] = useState<Backend | null>(null)
-  const [detalle, setDetalle] = useState('')
+  const [metricas, setMetricas] = useState<Metricas | null>(null)
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
   const [ajustes, setAjustes] = useState<Ajustes>(cargarAjustes)
   const [progreso, setProgreso] = useState<Progreso | null>(null)
   const [restante, setRestante] = useState<number | null>(null)
   const [logSintesis, setLogSintesis] = useState<string[]>([])
   const [arrastrando, setArrastrando] = useState(false)
+  const [acercaAbierto, setAcercaAbierto] = useState(false)
+
+  const t = useMemo(() => crearTraductor(ajustes.idioma), [ajustes.idioma])
 
   /**
    * Cancelación cooperativa: se pide y se corta antes del próximo segmento. No
@@ -86,10 +112,14 @@ export default function App() {
     guardarAjustes(ajustes)
   }, [ajustes])
 
-  // useLayoutEffect: aplica el tema antes del primer pintado, sin parpadeo.
+  // useLayoutEffect: aplica el tema y el idioma antes del primer pintado.
   useLayoutEffect(() => {
     document.documentElement.dataset.tema = ajustes.tema
   }, [ajustes.tema])
+
+  useLayoutEffect(() => {
+    document.documentElement.lang = ajustes.idioma
+  }, [ajustes.idioma])
 
   const segmentos = texto ? segmentarTexto(texto) : []
   const minutos = texto.length / CHARS_POR_MINUTO
@@ -115,17 +145,18 @@ export default function App() {
   const { estado: estadoMotor, preparar } = useMotor({
     alMensaje: (mensaje) => anunciar(mensaje),
     alBackend: setBackend,
+    t,
   })
 
   async function procesarArchivo(archivo: File) {
     if (!EXTENSIONES.test(archivo.name)) {
-      anunciar(`«${archivo.name}» no es un archivo .md.`, true)
+      anunciar(t('error.extension', { nombre: archivo.name }), true)
       return
     }
 
     const limpio = limpiarMarkdown(await archivo.text())
     if (!limpio.trim()) {
-      anunciar(`«${archivo.name}» no tiene texto después de limpiar el Markdown.`, true)
+      anunciar(t('error.sinTexto', { nombre: archivo.name }), true)
       return
     }
 
@@ -133,15 +164,15 @@ export default function App() {
     setNombreBase(base)
     setExtension(ext)
     setTexto(limpio)
-    setDetalle('')
+    setMetricas(null)
     if (audioUrl) URL.revokeObjectURL(audioUrl)
     setAudioUrl(null)
-    anunciar(`«${archivo.name}» listo para convertir.`)
+    anunciar(t('estado.listoParaConvertir', { nombre: archivo.name }))
 
     // Precarga: los ~400 MB empiezan a bajar ahora, mientras el usuario elige
     // voz y pasos, en vez de recién al tocar Generar.
     void preparar(ajustes.voz).catch(() =>
-      anunciar('No se pudieron preparar los modelos; se reintenta al generar.', true),
+      anunciar(t('error.precarga'), true),
     )
   }
 
@@ -166,13 +197,13 @@ export default function App() {
 
   function pedirCancelacion() {
     cancelado.current = true
-    anunciar('Cancelando al terminar el segmento en curso…')
+    anunciar(t('estado.cancelando'))
   }
 
   async function generar() {
     cancelado.current = false
     setOcupado(true)
-    setDetalle('')
+    setMetricas(null)
     if (audioUrl) {
       URL.revokeObjectURL(audioUrl)
       setAudioUrl(null)
@@ -183,6 +214,7 @@ export default function App() {
       texto,
       ajustes,
       nombreBase,
+      t,
       motor: {
         sintetizar: (opts) =>
           sintetizar({
@@ -209,20 +241,21 @@ export default function App() {
       alResultado: (resultado) => {
         if (audioUrl) URL.revokeObjectURL(audioUrl)
         setAudioUrl(URL.createObjectURL(resultado.blob))
-        const detalleBase =
-          `${resultado.segundos.toFixed(1)} s de audio en ${(resultado.ms / 1000).toFixed(1)} s` +
-          ` · RTF ${resultado.rtf.toFixed(2)} · ${resultado.tamanoMB.toFixed(1)} MB`
-        setDetalle(
-          resultado.parcial && resultado.segmentosCompletados && resultado.segmentosTotales
-            ? `Audio parcial (${resultado.segmentosCompletados} de ${resultado.segmentosTotales} segmentos) · ${detalleBase}`
-            : detalleBase,
-        )
+        setMetricas({
+          segundos: resultado.segundos,
+          ms: resultado.ms,
+          rtf: resultado.rtf,
+          tamanoMB: resultado.tamanoMB,
+          parcial: resultado.parcial,
+          segmentosCompletados: resultado.segmentosCompletados,
+          segmentosTotales: resultado.segmentosTotales,
+        })
       },
       alCancelado: (mensaje) => {
         anunciar(mensaje)
       },
       alError: (mensaje) => {
-        anunciar(`Error: ${mensaje}`, true)
+        anunciar(t('error.generico', { mensaje }), true)
       },
     })
 
@@ -235,21 +268,29 @@ export default function App() {
         <h1 className="marca">
           Supertonic <span>AudioBook</span>
         </h1>
-        <button
-          type="button"
-          className="icono"
-          onClick={alternarTema}
-          aria-label={ajustes.tema === 'oscuro' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
-        >
-          {ajustes.tema === 'oscuro' ? <IconoSol /> : <IconoLuna />}
-          {ajustes.tema === 'oscuro' ? 'Modo claro' : 'Modo oscuro'}
-        </button>
+        <div className="cabecera-acciones">
+          <select
+            className="selector-idioma"
+            aria-label={t('ajustes.idiomaInterfaz')}
+            value={ajustes.idioma}
+            onChange={(e) => cambiar('idioma', e.target.value as IdiomaInterfaz)}
+          >
+            <option value="es">{t('idioma.es')}</option>
+            <option value="en">{t('idioma.en')}</option>
+          </select>
+          <button
+            type="button"
+            className="icono"
+            onClick={alternarTema}
+            aria-label={ajustes.tema === 'oscuro' ? t('tema.aClaro') : t('tema.aOscuro')}
+          >
+            {ajustes.tema === 'oscuro' ? <IconoSol /> : <IconoLuna />}
+            {ajustes.tema === 'oscuro' ? t('tema.claro') : t('tema.oscuro')}
+          </button>
+        </div>
       </header>
 
-      <p className="intro">
-        Convertí un archivo Markdown en audio. Todo el procesamiento ocurre en tu navegador: el
-        texto no se sube a ningún servidor.
-      </p>
+      <p className="intro">{t('intro')}</p>
 
       <div className={`paneles${texto ? ' dos-columnas' : ''}`}>
         <section className="tarjeta">
@@ -267,14 +308,12 @@ export default function App() {
             />
             <strong>
               {arrastrando
-                ? 'Soltá el archivo'
+                ? t('zona.soltar')
                 : texto
-                  ? 'Cambiar archivo'
-                  : 'Arrastrá tu archivo .md acá'}
+                  ? t('zona.cambiar')
+                  : t('zona.arrastrar')}
             </strong>
-            <span>
-              {texto ? 'arrastrá otro o hacé clic para elegirlo' : 'o hacé clic para elegirlo'}
-            </span>
+            <span>{texto ? t('zona.arrastrarOtro') : t('zona.elegir')}</span>
           </label>
 
           {texto && (
@@ -284,22 +323,21 @@ export default function App() {
                   {nombreBase}
                   {extension ? `.${extension}` : ''}
                 </span>
-                <span className="chip">{texto.length.toLocaleString('es')} caracteres</span>
                 <span className="chip">
-                  {segmentos.length} {segmentos.length === 1 ? 'segmento' : 'segmentos'}
+                  {t('chip.caracteres', { n: texto.length.toLocaleString(ajustes.idioma) })}
                 </span>
-                <span className="chip">~{minutos.toFixed(0)} min de audio</span>
+                <span className="chip">
+                  {t(segmentos.length === 1 ? 'chip.segmento' : 'chip.segmentos', {
+                    n: segmentos.length,
+                  })}
+                </span>
+                <span className="chip">{t('chip.minutos', { n: minutos.toFixed(0) })}</span>
               </div>
 
-              {texto.length > AVISO_CARACTERES && (
-                <p className="aviso">
-                  Texto largo: en WASM puede tardar bastante más que el tiempo real. Probá primero
-                  con un capítulo.
-                </p>
-              )}
+              {texto.length > AVISO_CARACTERES && <p className="aviso">{t('aviso.largo')}</p>}
 
               <details className="texto">
-                <summary>Ver y editar el texto limpio</summary>
+                <summary>{t('texto.ver')}</summary>
                 <textarea value={texto} onChange={(e) => setTexto(e.target.value)} />
               </details>
             </>
@@ -309,9 +347,9 @@ export default function App() {
         {/* Sin archivo no hay nada que ajustar: la tarjeta aparece al cargarlo. */}
         {texto && (
           <section className="tarjeta">
-            <h2>Ajustes</h2>
+            <h2>{t('ajustes.titulo')}</h2>
             <div className="rejilla">
-              <label htmlFor="voz">Voz</label>
+              <label htmlFor="voz">{t('ajustes.voz')}</label>
               <select
                 id="voz"
                 value={ajustes.voz}
@@ -325,21 +363,21 @@ export default function App() {
                 ))}
               </select>
 
-              <label htmlFor="idioma">Idioma</label>
+              <label htmlFor="idioma">{t('ajustes.idiomaVoz')}</label>
               <select
                 id="idioma"
                 value={ajustes.lang}
                 disabled={ocupado}
                 onChange={(e) => cambiar('lang', e.target.value)}
               >
-                {IDIOMAS.map(([codigo, nombre]) => (
+                {IDIOMAS.map((codigo) => (
                   <option key={codigo} value={codigo}>
-                    {nombre}
+                    {t(`idioma.${codigo}`)}
                   </option>
                 ))}
               </select>
 
-              <label htmlFor="pasos">Pasos</label>
+              <label htmlFor="pasos">{t('ajustes.pasos')}</label>
               <div className="rango">
                 <input
                   id="pasos"
@@ -354,7 +392,7 @@ export default function App() {
                 <span className="valor">{ajustes.pasos}</span>
               </div>
 
-              <label htmlFor="velocidad">Velocidad</label>
+              <label htmlFor="velocidad">{t('ajustes.velocidad')}</label>
               <div className="rango">
                 <input
                   id="velocidad"
@@ -369,37 +407,36 @@ export default function App() {
                 <span className="valor">{ajustes.velocidad.toFixed(2)}×</span>
               </div>
 
-              <label htmlFor="formato">Formato</label>
+              <label htmlFor="formato">{t('ajustes.formato')}</label>
               <select id="formato" defaultValue="wav" disabled={ocupado}>
                 {FORMATOS.map((formato) => (
                   <option key={formato.id} value={formato.id} disabled={!formato.disponible}>
                     {formato.nombre}
-                    {formato.etiqueta ? ` (${formato.etiqueta})` : ''}
+                    {formato.disponible ? '' : ` (${t('formato.proximamente')})`}
                   </option>
                 ))}
               </select>
             </div>
-            <p className="nota">
-              Más pasos dan mejor calidad a cambio de más tiempo. El texto se corta en fragmentos de
-              hasta {MAX_CHARS_PER_SEGMENT} caracteres. MP3, OGG y FLAC requieren un codificador
-              extra; hoy se entrega WAV.
-            </p>
+            <p className="nota">{t('ajustes.nota', { max: MAX_CHARS_PER_SEGMENT })}</p>
+            <button type="button" className="fantasma acerca-boton" onClick={() => setAcercaAbierto(true)}>
+              {t('acerca.titulo')}
+            </button>
           </section>
         )}
       </div>
 
       <section className="acciones">
         <button type="button" className="principal" onClick={generar} disabled={ocupado || !texto}>
-          {ocupado ? 'Convirtiendo…' : 'Generar audio'}
+          {ocupado ? t('acciones.convirtiendo') : t('acciones.generar')}
         </button>
         {ocupado && (
           <button type="button" className="fantasma" onClick={pedirCancelacion}>
-            Cancelar
+            {t('acciones.cancelar')}
           </button>
         )}
         {(backend || estadoMotor === 'preparando') && (
           <span className="backend">
-            {estadoMotor === 'preparando' ? 'preparando modelos…' : backend}
+            {estadoMotor === 'preparando' ? t('acciones.preparando') : backend}
           </span>
         )}
       </section>
@@ -419,34 +456,44 @@ export default function App() {
         {progreso && (
           <p className="restante">
             {restante === null
-              ? 'Calculando el tiempo restante…'
-              : `Faltan ≈ ${formatearRestante(restante)}`}
+              ? t('progreso.calculando')
+              : t('progreso.faltan', { tiempo: formatearRestante(restante) })}
           </p>
         )}
         {progreso && logSintesis.length > 0 && (
           <p className="log-sintesis">
-            {logSintesis.map((linea) => (
-              <span>
-                {linea}
-              </span>
+            {logSintesis.map((linea, indice) => (
+              <span key={`${indice}-${linea}`}>{linea}</span>
             ))}
           </p>
         )}
-        <p className={esError ? 'estado error' : 'estado'}>{estado}</p>
+        <p className={esError ? 'estado error' : 'estado'}>{estado || t('estado.sinArchivo')}</p>
       </div>
 
       {audioUrl && (
         <section className="tarjeta resultado">
-          <h2>Resultado</h2>
+          <h2>{t('resultado.titulo')}</h2>
           <audio controls src={audioUrl} />
-          <p className="detalle">{detalle}</p>
+          {metricas && (
+            <p className="detalle">
+              {metricas.parcial && metricas.segmentosCompletados && metricas.segmentosTotales
+                ? t('resultado.parcial', {
+                    hechos: metricas.segmentosCompletados,
+                    total: metricas.segmentosTotales,
+                    detalle: detalleBase(metricas, t),
+                  })
+                : detalleBase(metricas, t)}
+            </p>
+          )}
           <p style={{ margin: '0.9rem 0 0' }}>
             <a className="principal descarga" href={audioUrl} download={`${nombreBase}.wav`}>
-              Descargar {nombreBase}.wav
+              {t('resultado.descargar', { archivo: nombreBase })}
             </a>
           </p>
         </section>
       )}
+
+      <AcercaDe abierto={acercaAbierto} alCerrar={() => setAcercaAbierto(false)} t={t} />
     </main>
   )
 }

@@ -2,7 +2,7 @@
 
 > Auditoría del proyecto de escritorio + plan paso a paso para llevar la app a una **web app React** con inferencia TTS en el navegador (WASM; WebGPU quedó descartado, §5.2).
 >
-> Fecha: 2026-10-21. Revisado y corregido el 2026-10-22 con una ejecución real del motor en navegador (§11). Actualizado el 2026-10-24 con el estado real de implementación (§0) y las mediciones del Web Worker (§11.9).
+> Fecha: 2026-10-21. Revisado y corregido el 2026-10-22 con una ejecución real del motor en navegador (§11). Actualizado el 2026-10-24 con el estado real de implementación (§0) y las mediciones del Web Worker (§11.9). Actualizado el 2026-11-05 con las fases 0, 3, 4 y 5 del plan por fases.
 >
 > Todo lo afirmado abajo está verificado contra el código de este repo, contra las APIs reales de Hugging Face / GitHub (salidas citadas en §4 y §5) y contra mediciones reales sobre `onnxruntime-web` (§11). Donde el plan original se equivocaba, la corrección está marcada con **CORREGIDO**. En §7, cada fase lleva su marca de avance: ✅ hecho · 🟡 parcial · ⬜ pendiente.
 
@@ -12,7 +12,7 @@
 
 > Esta sección es la foto actual del repo. El resto del documento sigue siendo el diseño de referencia.
 
-`main` con las fases 0, 3 y 4 cerradas: orquestador en el dominio, audio parcial al cancelar y selector de formatos. El camino crítico funciona de punta a punta: un `.md` entra, un WAV sale, con los pesos cacheados y el motor en un Web Worker. La demo está publicada en GitHub Pages y fue verificada en escritorio y en celular.
+`main` con las fases 0, 3, 4 y 5 cerradas: orquestador en el dominio, audio parcial al cancelar, selector de formatos, i18n ES/EN y Acerca de. El camino crítico funciona de punta a punta: un `.md` entra, un WAV sale, con los pesos cacheados y el motor en un Web Worker. La demo está publicada en GitHub Pages y fue verificada en escritorio y en celular.
 
 | Fase (§7) | Estado | Qué hay en el repo |
 |---|---|---|
@@ -20,20 +20,20 @@
 | 1 — Motor TTS | ✅ | `src/data/motor-tts.ts` (cliente del worker) + `src/workers/tts.worker.ts` (motor); WebGPU apagado (§5.2); inicialización única por visita, precarga al elegir archivo y ETA calibrado (§12) |
 | 2 — Descarga + caché | ✅ | `src/data/cache-modelos.ts` con `tee()` + `cache.put` por URL estable; 7 entradas cacheadas (§11.8) |
 | 3 — Dominio | ✅ | `limpiar-markdown.ts`, `segmentar-texto.ts`, `procesar-archivo.ts` (orquestador con motor inyectado), `nombre-archivo.ts`, `formato.ts` y `eta.ts` |
-| 4 — UI React | ✅ | Un `.md` con arrastrar/soltar, ajustes, tema claro/oscuro, progreso, cancelar con audio parcial, selector de formatos y resultado con descarga |
+| 4 — UI React | ✅ | Un `.md` con arrastrar/soltar, ajustes, tema claro/oscuro, progreso, cancelar con audio parcial, selector de formatos, i18n ES/EN, Acerca de y resultado con descarga |
 | 5 — Formatos | 🟡 | WAV real; el selector muestra MP3/OGG/FLAC deshabilitados con "próximamente". Faltan los encoders |
-| 6 — Tests | 🟡 | 73 tests de `vitest` (dominio, adaptadores, motor, orquestador y UI con jsdom); falta el test de humo en navegador |
+| 6 — Tests | 🟡 | 89 tests de `vitest` (dominio, adaptadores, motor, orquestador, i18n y UI con jsdom); falta el test de humo en navegador |
 | 7 — Deploy | ✅ | `.github/workflows/deploy.yml` + `coi-serviceworker`, verificado contra la URL real |
 
 **Lo que falta, por valor**
 
-1. i18n ES/EN y "Acerca de" con licencias y créditos (fase 5 del plan por fases).
-2. Test de humo en navegador real con motor y red reales (fase 8).
-3. Temas neumo/skeuo.
+1. Test de humo en navegador real con motor y red reales (fase 8).
+2. Paridad con el desktop: muestra de voz, panel de modelos y paneles separados (fase 6).
+3. Temas neumo/skeuo (fase 7).
 
 **Divergencias conscientes respecto del plan**
 
-- **73 tests, no 28.** Se sumaron `concatenar-muestras` (2), `ajustes` (11), `motor-una-vez` (3), `eta` (8), `formato` (2), `nombre-archivo` (7), orquestador (5) y UI de precarga, flujo y voces (7, con jsdom), que no existen en el desktop. Faltan los 9 de `repositorio_archivos`: su equivalente web es un archivo por vez.
+- **89 tests, no 28.** Se sumaron `ajustes` (12), `motor-una-vez` (3), `eta` (8), `formato` (2), `nombre-archivo` (7), orquestador (5), i18n (6) y UI de precarga, flujo, idioma, Acerca de y `useMotor` (21, con jsdom), que no existen en el desktop; `limpiar-markdown` (18), `segmentar-texto` (5) y `concatenar-muestras` (2) son el port del dominio. Faltan los 9 de `repositorio_archivos`: su equivalente web es un archivo por vez.
 - **Preferencias en una sola clave.** Todo se guarda como JSON bajo `supertonic.ajustes`, normalizado campo por campo al leer (`normalizarAjustes`), en lugar del esquema de claves sueltas del desktop.
 - **ETA.** Antes de generar la UI muestra duración estimada del audio; durante la corrida, un restante calculado con el RTF medido en los primeros segmentos (no un RTF de tabla).
 
@@ -477,7 +477,7 @@ Orden de implementación (de menor a mayor riesgo):
 - `vitest` con los 28 tests del dominio portados.
 - 1 test de humo: cargar modelos → sintetizar 10 caracteres → `wav.length > 0` (solo en navegador, con `npm run test:browser` o Playwright; no en CI por los 400 MB).
 - Test de la UI con `@testing-library/react` para: selección de archivos, validación de formato, cambio de idioma.
-- **Estado**: 🟡 53 tests de `vitest` en verde (dominio, adaptadores, motor y UI de la precarga); faltan el test de humo en navegador y ampliar la cobertura de UI.
+- **Estado**: 🟡 89 tests de `vitest` en verde (dominio, adaptadores, motor, orquestador, i18n y UI con jsdom); falta el test de humo en navegador.
 
 ### Fase 7 — Deploy — ✅
 
@@ -524,9 +524,9 @@ Orden de implementación (de menor a mayor riesgo):
 
 - [x] Se genera audio (WAV) de un `.md` de prueba en Chrome/Edge. **Vía WASM, no WebGPU**: WebGPU quedó descartado por audio corrupto en GPU móvil (§5.2).
 - [ ] La UI replica las 3 pestañas/paneles del desktop con log, progreso, cancelar, snackbar y ajustes. → hay progreso, cancelar y ajustes; faltan pestañas, log y snackbar.
-- [ ] Idioma ES/EN con las mismas claves que `TRADUCCIONES`. → hoy sólo español.
+- [x] Idioma ES/EN con las mismas claves que `TRADUCCIONES`. → diccionario tipado en `src/i18n/`, selector en la cabecera y `lang` del documento sincronizado.
 - [x] Los pesos se cachean: la segunda visita no descarga (§11.8).
-- [ ] Los 28 tests de dominio están portados y en verde. → 53 tests en verde, pero faltan 19 de los 28 originales (§0).
+- [ ] Los 28 tests de dominio están portados y en verde. → 89 tests en verde, pero faltan 19 de los 28 originales (§0).
 - [x] `git diff` del dominio JS vs Python es revisable línea por línea para `limpiar-markdown` y `segmentar-texto`.
 - [x] Deploy en GitHub Pages funcionando con `base` correcto.
 - [x] El motor arranca en el build de producción (no sólo en `npm run dev`): `wasmPaths` absoluto, sin `404` de `ort-wasm-*.mjs` (§5.3).

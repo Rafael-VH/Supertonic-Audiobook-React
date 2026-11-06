@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import paquete from './package.json' with { type: 'json' }
 
 /**
  * GitHub Pages sirve el sitio en /<repo>/, así que las rutas deben ser relativas.
@@ -31,6 +32,10 @@ const sinWasmDuplicado = {
 export default defineConfig({
   plugins: [react(), sinWasmDuplicado],
   base: './',
+  // La versión que muestra "Acerca de" sale de package.json en build time.
+  define: {
+    __APP_VERSION__: JSON.stringify(paquete.version),
+  },
   server: { headers: aislamiento },
   preview: { headers: aislamiento },
 })

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { generar, type OpcionesGenerar } from '../src/domain/procesar-archivo'
 import type { Ajustes } from '../src/data/ajustes'
+import { crearTraductor } from '../src/i18n/traductor'
 
 const ajustesBase: Ajustes = {
   voz: 'F1',
@@ -8,6 +9,7 @@ const ajustesBase: Ajustes = {
   pasos: 5,
   velocidad: 1.0,
   tema: 'oscuro',
+  idioma: 'es',
 }
 
 /** Dos párrafos de 800 caracteres: `segmentarTexto` no los fusiona. */
@@ -19,6 +21,7 @@ function opciones(extra: Partial<OpcionesGenerar> = {}): OpcionesGenerar {
     ajustes: ajustesBase,
     nombreBase: 'audio',
     motor: { sintetizar: vi.fn() },
+    t: crearTraductor('es'),
     debeCancelar: () => false,
     alMensaje: () => {},
     alProgreso: () => {},
